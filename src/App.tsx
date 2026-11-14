@@ -69,6 +69,55 @@ const getDependents = (code: string) =>
     (course) => course.code,
   );
 
+// Keep eligibility separate from graph geometry and from planned courses.
+const highSchoolPattern =
+  /(?:principles of mathematics|pre[- ]calculus|high school(?: calculus| biology)?|AP Calculus(?: AB| BC)?|(?:CALC|ENGL|CHEM|PHYS|BIOL|MATH)\s+(?:11|12)\b)/i;
+
+const evaluatePrerequisites = (course: Course, taken: ReadonlySet<string>) => {
+  const hasHighSchool = highSchoolPattern.test(course.prerequisiteText);
+  const text = course.prerequisiteText
+    .replace(/This course is not eligible[\s\S]*/i, "")
+    .replace(
+      /(?:Principles of Mathematics|Pre[- ]calculus|CALC|ENGL|CHEM|PHYS|BIOL|MATH)\s+(?:11|12)\b|AP Calculus(?: AB| BC)?|High School Biology/gi,
+      " HIGHSCHOOL ",
+    )
+    .replace(/High school calculus is strongly recommended\.?/gi, "")
+    .replace(/\b([A-Z]{2,5})_V\s+(\d{3})/g, "$1 $2")
+    // Okanagan courses remain distinct from Vancouver equivalents.
+    .replace(/\b([A-Z]{2,5})_O\s+(\d{3})/g, "$1_O $2");
+  const universityGradeRule =
+    /(?:score of|minimum grade|advanced credit|as a co-?requisite|credit exclusion|standing|permission|credits (?:of|from|beyond))/i.test(
+      text.replace(/[^.]*HIGHSCHOOL[^.]*(?:\.|$)/g, (part) =>
+        /[A-Z]{2,5}(?:_O)?\s+\d{3}/.test(part) ? part : "",
+      ),
+    );
+  const review =
+    (course.manualRequirement && !(hasHighSchool && !/[A-Z]{2,5}(?:_O)?\s+\d{3}/.test(text))) ||
+    universityGradeRule;
+  const evaluateText = (value: string): boolean => {
+    // Labelled alternative branches take precedence over conjunctions within each branch.
+    const alternatives = value.split(/\bor\s+\(?[a-d]\)/i);
+    if (alternatives.length > 1) return alternatives.some(evaluateText);
+    const conjunctions = value
+      .split(/\band\b|;/i)
+      .filter((part) => /HIGHSCHOOL|[A-Z]{2,5}(?:_O)?\s+\d{3}/.test(part));
+    if (conjunctions.length > 1) return conjunctions.every(evaluateText);
+    const codes = value.match(/[A-Z]{2,5}(?:_O)?\s+\d{3}/g) || [];
+    const options = [
+      ...codes.map((code) => taken.has(code)),
+      ...(value.includes("HIGHSCHOOL") ? [true] : []),
+    ];
+    if (!options.length) return !value.trim() || !course.prerequisiteText;
+    return /one of|either|\bor\b/i.test(value) ? options.some(Boolean) : options.every(Boolean);
+  };
+  const met = course.prerequisitePaths.length
+    ? course.prerequisitePaths.some((path) =>
+        path.every((code) => taken.has(code) || highSchoolPattern.test(code)),
+      )
+    : !course.prerequisiteText || evaluateText(text);
+  return { met: met && !review, review, hasHighSchool };
+};
+
 function App() {
   const [completed, setCompleted] = useState(["CPSC 110", "MATH 100", "ENGL 110"]);
   const [planned, setPlanned] = useState(["CPSC 210", "MATH 101"]);
@@ -404,25 +453,44 @@ function App() {
   }, [completed, planned]);
 
   const currentDetails = selected ? COURSES[selected] : null;
-  const prerequisitesMet = currentDetails
-    ? !currentDetails.prerequisiteText ||
-      currentDetails.prerequisitePaths.some((path) =>
-        path.every((code) => completed.includes(code)),
-      )
-    : false;
+  const eligibility = useMemo(() => {
+    const taken = new Set(completed);
+    return Object.fromEntries(
+      COURSE_LIST.map((course) => [course.code, evaluatePrerequisites(course, taken)]),
+    );
+  }, [completed]);
+  const detailEligibility = currentDetails ? eligibility[currentDetails.code] : null;
+  const needsManualReview = Boolean(detailEligibility?.review);
+  const isEligible = Boolean(detailEligibility?.met);
   const corequisitesMet = currentDetails
-    ? currentDetails.corequisiteGroups.every((group) =>
-        group.some((code) => completed.includes(code) || planned.includes(code)),
-      )
+    ? currentDetails.corequisiteGroups.length
+      ? currentDetails.corequisiteGroups.every((group) =>
+          group.some((code) => completed.includes(code) || planned.includes(code)),
+        )
+      : evaluatePrerequisites(
+          {
+            ...currentDetails,
+            prerequisiteText: currentDetails.corequisiteText,
+            prerequisitePaths: [],
+            manualRequirement: false,
+          },
+          new Set([...completed, ...planned]),
+        ).met
     : false;
-  const needsManualReview = Boolean(
-    currentDetails &&
-    (currentDetails.manualRequirement ||
-      (currentDetails.prerequisiteText && !currentDetails.prerequisitePaths.length)),
-  );
-  const isEligible = prerequisitesMet && corequisitesMet && !needsManualReview;
   const status = (code: string) =>
-    completed.includes(code) ? "completed" : planned.includes(code) ? "planned" : "available";
+    completed.includes(code)
+      ? "completed"
+      : planned.includes(code)
+        ? "planned"
+        : eligibility[code]?.met
+          ? "satisfied"
+          : "available";
+  const statusLabel = (code: string) =>
+    status(code) === "satisfied"
+      ? "Prerequisites satisfied"
+      : status(code) === "available"
+        ? "Other"
+        : status(code);
 
   return (
     <main className="app-shell">
@@ -591,7 +659,7 @@ function App() {
                     event.stopPropagation();
                     focusCourse(code);
                   }}
-                  aria-label={`View ${code}, ${COURSES[code].title}`}
+                  aria-label={`View ${code}, ${COURSES[code].title}, ${statusLabel(code)}`}
                 >
                   <span className="node-glow" />
                   <span className="node-core">
@@ -650,6 +718,10 @@ function App() {
 
         <div className="legend glass-panel">
           <span>
+            <i className="satisfied" />
+            Prerequisites satisfied
+          </span>
+          <span>
             <i className="completed" />
             Completed
           </span>
@@ -685,7 +757,7 @@ function App() {
               <Icon name="x" />
             </button>
             <div className="detail-topline">
-              <span className={`status-chip ${status(currentDetails.code)}`}>
+              <span className={`status-chip ${statusLabel(currentDetails.code)}`}>
                 {status(currentDetails.code)}
               </span>
               <span>
@@ -717,6 +789,12 @@ function App() {
                 </>
               )}
             </div>
+            {detailEligibility?.hasHighSchool && (
+              <p style={{ color: "#8390a4", fontSize: 10, lineHeight: 1.5 }}>
+                High school prerequisites are assumed satisfied. Please verify that you meet these
+                requirements.
+              </p>
+            )}
             <div className={`eligibility ${isEligible ? "eligible" : ""}`}>
               <span className="eligibility-icon">
                 <Icon name={isEligible ? "check" : "x"} size={15} />
@@ -737,7 +815,11 @@ function App() {
                     : needsManualReview
                       ? "The Calendar includes standing, grade, or permission rules"
                       : isEligible
-                        ? "A valid prerequisite pathway is complete"
+                        ? currentDetails.corequisiteText
+                          ? corequisitesMet
+                            ? "Prerequisites met; corequisites completed or planned."
+                            : "Prerequisites met. Listed corequisites still need to be completed or planned."
+                          : "A valid prerequisite pathway is complete"
                         : "Complete one of the listed prerequisite pathways"}
                 </small>
               </span>

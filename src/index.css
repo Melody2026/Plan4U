@@ -428,6 +428,23 @@
     rgba(29, 25, 17, 0.9) 68%
   );
 }
+.course-node.satisfied .node-core {
+  background-color: #b28af5;
+  border-color: rgba(195, 161, 255, 0.16);
+  box-shadow: 0 0 9px #b28af5, 0 0 24px rgba(178, 138, 245, 0.5);
+}
+.course-node.satisfied {
+  border-color: rgba(178, 138, 245, 0.34);
+  background: radial-gradient(circle at 50% 38%, rgba(132, 86, 194, 0.22), rgba(23, 19, 36, 0.9) 68%);
+}
+.legend i.satisfied {
+  background: #b28af5;
+  box-shadow: 0 0 8px rgba(178, 138, 245, 0.5);
+}
+.status-chip.satisfied {
+  color: #c5a5fc;
+  background: rgba(178, 138, 245, 0.12);
+}
 .course-node.layer-0 {
   width: 124px;
   height: 124px;
@@ -716,8 +733,8 @@
   background: rgba(180, 73, 73, 0.07);
 }
 .eligibility.eligible {
-  color: #58cf8b;
-  background: rgba(72, 185, 121, 0.07);
+  color: #c5a5fc;
+  background: rgba(178, 138, 245, 0.09);
 }
 .eligibility-icon {
   display: grid;
