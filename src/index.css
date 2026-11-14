@@ -939,12 +939,25 @@
   border-radius: 6px;
   color: #718097;
   background: #111a28;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+.list-item:hover .remove-button,
+.list-item:focus-within .remove-button {
   opacity: 1;
+  pointer-events: auto;
 }
 .remove-button:hover {
   border-color: rgba(223, 133, 133, 0.4);
   color: #ef9494;
   background: rgba(190, 70, 70, 0.12);
+}
+@media (hover: none) {
+  .remove-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .planned-section {
   flex: 1;

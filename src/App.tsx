@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { COURSE_LIST, COURSES, type Course } from "./data/courses";
 
@@ -76,9 +76,47 @@ function App() {
   const [history, setHistory] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [viewport, setViewport] = useState({
+    width: 1000,
+    height: 700,
+    obstacles: [] as { left: number; right: number; top: number; bottom: number }[],
+  });
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const measure = () => {
+      const bounds = stage.getBoundingClientRect();
+      const obstacles = Array.from(
+        stage.parentElement!.querySelectorAll(".progress-card, .map-label, .map-controls, .legend"),
+      ).map((element) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          left: rect.left - bounds.left,
+          right: rect.right - bounds.left,
+          top: rect.top - bounds.top,
+          bottom: rect.bottom - bounds.top,
+        };
+      });
+      setViewport((previous) => {
+        const next = { width: bounds.width, height: bounds.height, obstacles };
+        return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(stage);
+    stage
+      .parentElement!.querySelectorAll(".progress-card, .map-label, .map-controls, .legend")
+      .forEach((panel) => observer.observe(panel));
+    measure();
+    return () => observer.disconnect();
+  }, []);
 
   const direct = useMemo(() => {
     const current = COURSES[center];
@@ -90,47 +128,227 @@ function App() {
       ...getPrerequisites(COURSES[code]),
       ...getDependents(code),
     ]);
-    return [...new Set(expanded)].filter((code) => code !== center && !direct.includes(code));
+    return [...new Set(expanded)]
+      .filter((code) => code !== center && !direct.includes(code))
+      .sort((a, b) => {
+        const strength = (code: string) =>
+          direct.filter(
+            (neighbor) =>
+              getPrerequisites(COURSES[code]).includes(neighbor) ||
+              getPrerequisites(COURSES[neighbor]).includes(code),
+          ).length;
+        return strength(b) - strength(a) || a.localeCompare(b);
+      })
+      .slice(0, 6);
   }, [center, direct]);
 
-  const positions = useMemo(() => {
-    const result: Record<string, { x: number; y: number; layer: number }> = {
-      [center]: { x: 500, y: 350, layer: 0 },
-    };
-    direct.forEach((code, i) => {
-      const angle = -Math.PI / 2 + (i * Math.PI * 2) / Math.max(direct.length, 1);
-      result[code] = { x: 500 + Math.cos(angle) * 205, y: 350 + Math.sin(angle) * 180, layer: 1 };
+  const visible = [center, ...direct, ...second];
+  const connections = useMemo(() => {
+    const primary = direct.map((code) =>
+      getPrerequisites(COURSES[center]).includes(code)
+        ? { from: code, to: center }
+        : { from: center, to: code },
+    );
+    // One real prerequisite link per secondary star keeps branches readable.
+    const secondary = second.flatMap((code) => {
+      const parent = direct.find(
+        (neighbor) =>
+          getPrerequisites(COURSES[code]).includes(neighbor) ||
+          getPrerequisites(COURSES[neighbor]).includes(code),
+      );
+      if (!parent) return [];
+      return [
+        getPrerequisites(COURSES[code]).includes(parent)
+          ? { from: parent, to: code }
+          : { from: code, to: parent },
+      ];
     });
-    second.forEach((code, i) => {
-      const angle = -Math.PI / 2 + 0.38 + (i * Math.PI * 2) / Math.max(second.length, 1);
-      result[code] = { x: 500 + Math.cos(angle) * 375, y: 350 + Math.sin(angle) * 292, layer: 2 };
-    });
-    return result;
+    return [...primary, ...secondary];
   }, [center, direct, second]);
 
-  const visible = [center, ...direct, ...second];
-  const connections = visible.flatMap((code) =>
-    getPrerequisites(COURSES[code])
-      .filter((pre) => visible.includes(pre))
-      .map((pre) => ({ from: pre, to: code })),
-  );
+  const positions = useMemo(() => {
+    const { width, height, obstacles } = viewport;
+    const hash = (code: string) => {
+      let value = 2166136261;
+      for (const char of code) value = Math.imul(value ^ char.charCodeAt(0), 16777619);
+      return (value >>> 0) / 4294967296;
+    };
+    const codes = [center, ...direct.slice().sort(), ...second.slice().sort()];
+    const result: Record<string, { x: number; y: number; layer: number }> = {};
+    const radius = (code: string) => (code === center ? 72 : direct.includes(code) ? 57 : 39);
+    // Project complete node/label footprints out of the interface panels.
+    const constrain = (code: string) => {
+      const node = result[code];
+      const r = radius(code);
+      for (let pass = 0; pass < 4; pass++) {
+        node.x = Math.max(r + 12, Math.min(width - r - 12, node.x));
+        node.y = Math.max(r + 14, Math.min(height - r - 14, node.y));
+        for (const box of obstacles) {
+          const left = box.left - r - 12,
+            right = box.right + r + 12;
+          const top = box.top - r - 12,
+            bottom = box.bottom + r + 12;
+          if (node.x <= left || node.x >= right || node.y <= top || node.y >= bottom) continue;
+          const choices = [
+            { x: left, y: node.y },
+            { x: right, y: node.y },
+            { x: node.x, y: top },
+            { x: node.x, y: bottom },
+          ].filter(
+            (p) =>
+              p.x >= r + 12 && p.x <= width - r - 12 && p.y >= r + 14 && p.y <= height - r - 14,
+          );
+          choices.sort(
+            (a, b) =>
+              Math.hypot(a.x - node.x, a.y - node.y) - Math.hypot(b.x - node.x, b.y - node.y),
+          );
+          if (choices[0]) Object.assign(node, choices[0]);
+        }
+      }
+    };
+    result[center] = { x: width * 0.55, y: height * 0.56, layer: 0 };
+    constrain(center);
+    const origin = { ...result[center] };
+    for (const code of codes.slice(1)) {
+      const layer = direct.includes(code) ? 1 : 2;
+      const parent =
+        layer === 1
+          ? center
+          : direct.find(
+              (neighbor) =>
+                getPrerequisites(COURSES[code]).includes(neighbor) ||
+                getPrerequisites(COURSES[neighbor]).includes(code),
+            ) || center;
+      const anchor = result[parent] || origin;
+      const angle = hash(code) * Math.PI * 2;
+      const distance = (layer === 1 ? 185 : 135) + hash(code + center) * 160;
+      result[code] = {
+        x: anchor.x + Math.cos(angle) * distance,
+        y: anchor.y + Math.sin(angle) * distance,
+        layer,
+      };
+      constrain(code);
+    }
+    const edges = connections;
+    // Seeded starting points + a fixed iteration count keep repeated selections stable.
+    for (let iteration = 0; iteration < 260; iteration++) {
+      const forces = Object.fromEntries(codes.map((code) => [code, { x: 0, y: 0 }]));
+      for (let i = 0; i < codes.length; i++) {
+        for (let j = i + 1; j < codes.length; j++) {
+          const a = codes[i],
+            b = codes[j];
+          const dx = result[b].x - result[a].x || 0.01;
+          const dy = result[b].y - result[a].y || 0.01;
+          const distance = Math.hypot(dx, dy);
+          const spacing = radius(a) + radius(b) + 48;
+          const push = Math.max(0, spacing - distance) * 0.34 + 720 / (distance * distance);
+          forces[a].x -= (dx / distance) * push;
+          forces[a].y -= (dy / distance) * push;
+          forces[b].x += (dx / distance) * push;
+          forces[b].y += (dy / distance) * push;
+        }
+      }
+      for (const { from, to } of edges) {
+        const a = result[from],
+          b = result[to];
+        const dx = b.x - a.x,
+          dy = b.y - a.y;
+        const distance = Math.hypot(dx, dy) || 1;
+        const desired = radius(from) + radius(to) + 100 + hash(from + to) * 95;
+        const pull = (distance - desired) * 0.025;
+        forces[from].x += (dx / distance) * pull;
+        forces[from].y += (dy / distance) * pull;
+        forces[to].x -= (dx / distance) * pull;
+        forces[to].y -= (dy / distance) * pull;
+        // Keep unrelated stars and their labels away from connecting lines.
+        for (const code of codes) {
+          if (code === from || code === to || code === center) continue;
+          const n = result[code];
+          const t = Math.max(
+            0.08,
+            Math.min(0.92, ((n.x - a.x) * dx + (n.y - a.y) * dy) / (distance * distance)),
+          );
+          const ox = n.x - a.x - t * dx,
+            oy = n.y - a.y - t * dy;
+          const gap = Math.hypot(ox, oy) || 1;
+          const push = Math.max(0, radius(code) + 24 - gap) * 0.08;
+          forces[code].x += (ox / gap) * push;
+          forces[code].y += (oy / gap) * push;
+        }
+      }
+      for (const code of codes.slice(1)) {
+        const node = result[code];
+        const force = forces[code];
+        node.x += Math.max(-9, Math.min(9, force.x + (origin.x - node.x) * 0.0008));
+        node.y += Math.max(-9, Math.min(9, force.y + (origin.y - node.y) * 0.0008));
+        constrain(code);
+      }
+    }
+    // Resolve remaining label collisions after the spring forces settle.
+    for (let pass = 0; pass < 120; pass++) {
+      let overlaps = 0;
+      for (let i = 0; i < codes.length; i++) {
+        for (let j = i + 1; j < codes.length; j++) {
+          const a = codes[i],
+            b = codes[j];
+          const first = result[a],
+            last = result[b];
+          const dx = last.x - first.x,
+            dy = last.y - first.y;
+          const distance = Math.hypot(dx, dy);
+          const minimum = radius(a) + radius(b) + 12;
+          if (distance >= minimum) continue;
+          overlaps++;
+          const angle = distance < 0.01 ? hash(a + b) * Math.PI * 2 : Math.atan2(dy, dx);
+          const shift = minimum - distance + 1;
+          const share = a === center ? 0 : 0.5;
+          first.x -= Math.cos(angle) * shift * share;
+          first.y -= Math.sin(angle) * shift * share;
+          last.x += Math.cos(angle) * shift * (1 - share);
+          last.y += Math.sin(angle) * shift * (1 - share);
+          if (a !== center) constrain(a);
+          constrain(b);
+        }
+      }
+      if (!overlaps) break;
+    }
+    return result;
+  }, [center, direct, second, viewport, connections]);
 
   const focusCourse = (code: string, showDetails = true) => {
-    if (code !== center) setHistory((items) => [...items, center]);
-    setCenter(code);
+    if (code !== center) {
+      setHistory((items) => [...items, center]);
+      setCenter(code);
+      setPan({ x: 0, y: 0 });
+      setZoom(1);
+    }
     setSelected(showDetails ? code : null);
-    setPan({ x: 0, y: 0 });
-    setZoom(1);
+  };
+
+  const searchMatches = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return [];
+    return COURSE_LIST.filter(
+      (course) =>
+        !completed.includes(course.code) &&
+        (course.code.toLowerCase().includes(term) || course.title.toLowerCase().includes(term)),
+    ).slice(0, 8);
+  }, [query, completed]);
+
+  // Search selection updates course status only; map selection uses focusCourse.
+  const selectTakenCourse = (code: string) => {
+    if (!COURSES[code]) return;
+    setCompleted((items) => (items.includes(code) ? items : [...items, code]));
+    setPlanned((items) => items.filter((item) => item !== code));
+    setQuery("");
+    setSearchOpen(false);
   };
 
   const addCompleted = () => {
-    const normalized = Object.keys(COURSES).find(
-      (code) => code.toLowerCase() === query.trim().toLowerCase(),
+    const exact = COURSE_LIST.find(
+      (course) => course.code.toLowerCase() === query.trim().toLowerCase(),
     );
-    if (!normalized || completed.includes(normalized)) return;
-    setCompleted((items) => [...items, normalized]);
-    setPlanned((items) => items.filter((code) => code !== normalized));
-    setQuery("");
+    if (exact) selectTakenCourse(exact.code);
   };
 
   const addPlan = (code: string) => {
@@ -139,6 +357,8 @@ function App() {
   };
 
   const requirements = useMemo(() => {
+    const completedCodes = [...new Set(completed)];
+    const plannedCodes = [...new Set(planned)].filter((code) => !completedCodes.includes(code));
     const sum = (codes: string[], predicate: (course: Course) => boolean) =>
       codes.reduce(
         (total, code) => total + (predicate(COURSES[code]) ? COURSES[code].credits : 0),
@@ -149,36 +369,36 @@ function App() {
         label: "Overall credits",
         short: "Overall",
         target: 120,
-        done: sum(completed, () => true),
-        plan: sum(planned, () => true),
+        done: sum(completedCodes, () => true),
+        plan: sum(plannedCodes, () => true),
       },
       {
         label: "Major",
         short: "Major",
         target: 42,
-        done: sum(completed, (c) => c.category === "Major"),
-        plan: sum(planned, (c) => c.category === "Major"),
+        done: sum(completedCodes, (c) => c.category === "Major"),
+        plan: sum(plannedCodes, (c) => c.category === "Major"),
       },
       {
         label: "Science",
         short: "Science",
         target: 24,
-        done: sum(completed, (c) => c.category === "Science"),
-        plan: sum(planned, (c) => c.category === "Science"),
+        done: sum(completedCodes, (c) => c.category === "Science"),
+        plan: sum(plannedCodes, (c) => c.category === "Science"),
       },
       {
         label: "Elective",
         short: "Elective",
         target: 18,
-        done: sum(completed, (c) => c.category === "Elective"),
-        plan: sum(planned, (c) => c.category === "Elective"),
+        done: sum(completedCodes, (c) => c.category === "Elective"),
+        plan: sum(plannedCodes, (c) => c.category === "Elective"),
       },
       {
         label: "Upper-level",
         short: "Upper",
         target: 30,
-        done: sum(completed, (c) => c.level >= 300),
-        plan: sum(planned, (c) => c.level >= 300),
+        done: sum(completedCodes, (c) => c.level >= 300),
+        plan: sum(plannedCodes, (c) => c.level >= 300),
       },
     ];
   }, [completed, planned]);
@@ -216,9 +436,6 @@ function App() {
             <div className="brand-name">CoursePath</div>
             <div className="brand-subtitle">UBC · BSc Computer Science</div>
           </div>
-          <div className="term-pill">
-            <span /> 2025W planning
-          </div>
         </header>
 
         <div className="progress-card glass-panel">
@@ -226,10 +443,20 @@ function App() {
             <div>
               <span className="eyebrow">Degree progress</span>
               <h2>
-                {requirements[0].done} <small>/ 120 credits</small>
+                {requirements[0].done}{" "}
+                {requirements[0].plan > 0 && (
+                  <span style={{ color: "#e9bd50", fontSize: 15 }}>+{requirements[0].plan} </span>
+                )}
+                <small>/ {requirements[0].target} credits</small>
               </h2>
             </div>
-            <div className="degree-badge">
+            <div
+              className="degree-badge"
+              style={{
+                flexShrink: 0,
+                background: `conic-gradient(#518ee9 ${Math.min(100, (requirements[0].done / requirements[0].target) * 100)}%, #1b2738 0)`,
+              }}
+            >
               {Math.min(100, Math.round((requirements[0].done / requirements[0].target) * 100))}%
             </div>
           </div>
@@ -239,7 +466,9 @@ function App() {
                 <div className="requirement-meta">
                   <span>{req.short}</span>
                   <span>
-                    {req.done + req.plan}/{req.target}
+                    <span style={{ color: "#f5f7fb" }}>{req.done}</span>
+                    {req.plan > 0 && <span style={{ color: "#e9bd50" }}> +{req.plan}</span>}
+                    <span style={{ color: "#59687f" }}> / {req.target}</span>
                   </span>
                 </div>
                 <div
@@ -277,6 +506,7 @@ function App() {
         </div>
 
         <div
+          ref={stageRef}
           className="graph-stage"
           onWheel={(event) => {
             event.preventDefault();
@@ -304,12 +534,14 @@ function App() {
           <div
             className="graph-transform"
             style={{
+              width: viewport.width,
+              height: viewport.height,
+              left: "50%",
+              top: "50%",
               transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
             }}
           >
-            <div className="orbit orbit-one" />
-            <div className="orbit orbit-two" />
-            <svg className="connection-layer" viewBox="0 0 1000 700">
+            <svg className="connection-layer" viewBox={`0 0 ${viewport.width} ${viewport.height}`}>
               <defs>
                 <marker
                   id="arrow"
@@ -328,11 +560,12 @@ function App() {
                 const b = positions[to];
                 const dx = b.x - a.x;
                 const dy = b.y - a.y;
-                const length = Math.sqrt(dx * dx + dy * dy);
+                const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
                 const startR = a.layer === 0 ? 53 : a.layer === 1 ? 43 : 32;
                 const endR = b.layer === 0 ? 62 : b.layer === 1 ? 52 : 40;
                 return (
                   <line
+                    style={{ transition: "all 0.7s cubic-bezier(0.2, 0.8, 0.2, 1)" }}
                     key={`${from}-${to}`}
                     x1={a.x + (dx / length) * startR}
                     y1={a.y + (dy / length) * startR}
@@ -431,7 +664,19 @@ function App() {
         </div>
 
         {currentDetails && (
-          <article className="detail-card glass-panel">
+          <article
+            className="detail-card glass-panel"
+            aria-label="Course information"
+            style={{
+              position: "absolute",
+              right: 18,
+              top: 96,
+              width: 286,
+              padding: 16,
+              maxHeight: "calc(100% - 120px)",
+              zIndex: 20,
+            }}
+          >
             <button
               className="close-button"
               onClick={() => setSelected(null)}
@@ -549,30 +794,93 @@ function App() {
             </div>
             <span>{completed.length}</span>
           </div>
-          <div className="course-search">
-            <Icon name="search" size={17} />
-            <input
-              value={query}
-              onChange={(e) => {
-                const value = e.target.value;
-                setQuery(value);
-                const exact = COURSES[value.trim().toUpperCase()];
-                if (exact) focusCourse(exact.code);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") addCompleted();
-              }}
-              list="course-options"
-              placeholder="Search course code"
-            />
-            <datalist id="course-options">
-              {COURSE_LIST.filter((course) => !completed.includes(course.code)).map((course) => (
-                <option key={course.code} value={course.code}>
-                  {course.title}
-                </option>
-              ))}
-            </datalist>
-            <button onClick={addCompleted}>Add</button>
+          <div
+            data-course-search
+            style={{ position: "relative" }}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                setSearchOpen(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setSearchOpen(false);
+            }}
+          >
+            <div className="course-search">
+              <Icon name="search" size={17} />
+              <input
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setSearchOpen(true);
+                }}
+                onFocus={() => setSearchOpen(true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addCompleted();
+                  }
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    event.currentTarget
+                      .closest("[data-course-search]")
+                      ?.querySelector<HTMLButtonElement>("[data-suggestion]")
+                      ?.focus();
+                  }
+                }}
+                aria-label="Search courses to add to Courses Taken"
+                aria-expanded={searchOpen && Boolean(query.trim())}
+                aria-controls="taken-course-suggestions"
+                autoComplete="off"
+                placeholder="Search course code"
+              />
+              <button onClick={addCompleted}>Add</button>
+            </div>
+            {searchOpen && query.trim() && (
+              <div
+                id="taken-course-suggestions"
+                aria-label="Matching courses"
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: 0,
+                  right: 0,
+                  zIndex: 30,
+                  maxHeight: 260,
+                  overflowY: "auto",
+                  padding: 6,
+                  borderRadius: 8,
+                  border: "1px solid #253248",
+                  background: "#0a101a",
+                  boxShadow: "0 12px 30px #0008",
+                }}
+              >
+                {searchMatches.map((course) => (
+                  <button
+                    key={course.code}
+                    data-suggestion
+                    className="course-link"
+                    onClick={() => selectTakenCourse(course.code)}
+                    style={{
+                      width: "100%",
+                      padding: "9px 8px",
+                      textAlign: "left",
+                      borderRadius: 6,
+                    }}
+                  >
+                    <span>
+                      <strong>{course.code}</strong>
+                      <small>{course.title}</small>
+                    </span>
+                    <Icon name="plus" size={14} />
+                  </button>
+                ))}
+                {!searchMatches.length && (
+                  <p style={{ padding: 8, color: "#748399", fontSize: 11 }}>
+                    No matching courses to add.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <div className="course-list">
             {completed.map((code) => (
@@ -586,11 +894,14 @@ function App() {
                 </button>
                 <button
                   className="remove-button"
-                  onClick={() => setCompleted((items) => items.filter((item) => item !== code))}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setCompleted((items) => items.filter((item) => item !== code));
+                  }}
                   aria-label={`Remove ${code} from courses taken`}
-                  title="Remove from courses taken"
+                  title="Remove course"
                 >
-                  <Icon name="minus" size={14} />
+                  <Icon name="x" size={14} />
                 </button>
               </div>
             ))}
@@ -618,11 +929,14 @@ function App() {
                 </button>
                 <button
                   className="remove-button"
-                  onClick={() => setPlanned((items) => items.filter((item) => item !== code))}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setPlanned((items) => items.filter((item) => item !== code));
+                  }}
                   aria-label={`Remove ${code} from plan`}
-                  title="Remove from course plan"
+                  title="Remove course"
                 >
-                  <Icon name="minus" size={14} />
+                  <Icon name="x" size={14} />
                 </button>
               </div>
             ))}
