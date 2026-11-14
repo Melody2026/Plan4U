@@ -118,45 +118,241 @@ const evaluatePrerequisites = (course: Course, taken: ReadonlySet<string>) => {
   return { met: met && !review, review, hasHighSchool };
 };
 
+const WORLD = { width: 4800, height: 3600 };
+const DEFAULT_ZOOM = 0.75;
+const INITIAL_COMPLETED = ["CPSC 110", "MATH 100", "ENGL 110"];
+const INITIAL_PLANNED = ["CPSC 210", "MATH 101"];
+const INITIAL_NEXT_STEPS = new Set(
+  COURSE_LIST.filter(
+    (course) =>
+      !INITIAL_COMPLETED.includes(course.code) &&
+      !INITIAL_PLANNED.includes(course.code) &&
+      evaluatePrerequisites(course, new Set(INITIAL_COMPLETED)).met,
+  ).map((course) => course.code),
+);
+const NETWORK_EDGES = COURSE_LIST.flatMap((course) =>
+  getPrerequisites(course)
+    .filter((code) => code !== course.code)
+    .map((code) => ({ from: code, to: course.code })),
+);
+
+// Use initial eligibility once to place next steps; subsequent status changes never move stars.
+const COURSE_POSITIONS = (() => {
+  const hash = (code: string) => {
+    let value = 2166136261;
+    for (const char of code) value = Math.imul(value ^ char.charCodeAt(0), 16777619);
+    return (value >>> 0) / 4294967296;
+  };
+  const codes = COURSE_LIST.map((course) => course.code).sort();
+  const initiallyTaken = new Set(INITIAL_COMPLETED);
+  const nextSteps = INITIAL_NEXT_STEPS;
+  const initialNeighbors = new Set([
+    ...getPrerequisites(COURSES["CPSC 110"]),
+    ...getDependents("CPSC 110"),
+  ]);
+  const nodes = Object.fromEntries(
+    codes.map((code) => [
+      code,
+      {
+        x: 650 + COURSES[code].level * 5 + hash(code) * 700,
+        y: 450 + hash(code + "branch") * 2600,
+      },
+    ]),
+  );
+  for (let step = 0; step < 650; step++) {
+    const force = Object.fromEntries(codes.map((code) => [code, { x: 0, y: 0 }]));
+    for (let i = 0; i < codes.length; i++)
+      for (let j = i + 1; j < codes.length; j++) {
+        const a = codes[i],
+          b = codes[j];
+        const dx = nodes[b].x - nodes[a].x || 0.01,
+          dy = nodes[b].y - nodes[a].y || 0.01;
+        const length = Math.hypot(dx, dy);
+        const push = Math.max(0, 180 - length) * 0.45 + 1800 / (length * length);
+        force[a].x -= (dx / length) * push;
+        force[a].y -= (dy / length) * push;
+        force[b].x += (dx / length) * push;
+        force[b].y += (dy / length) * push;
+      }
+    for (const { from, to } of NETWORK_EDGES) {
+      const dx = nodes[to].x - nodes[from].x,
+        dy = nodes[to].y - nodes[from].y;
+      const length = Math.hypot(dx, dy) || 1;
+      const pull = (length - 190 - hash(from + to) * 70) * 0.035;
+      force[from].x += (dx / length) * pull;
+      force[from].y += (dy / length) * pull;
+      force[to].x -= (dx / length) * pull;
+      force[to].y -= (dy / length) * pull;
+    }
+    const anchor = nodes["CPSC 110"];
+    for (const code of codes) {
+      if (code === "CPSC 110") continue;
+      const dx = nodes[code].x - anchor.x,
+        dy = nodes[code].y - anchor.y;
+      const length = Math.hypot(dx, dy) || 1;
+      const preferred = 260 + hash(code + "next-step") * 320;
+      // Soft attraction preserves irregular branches instead of imposing a ring.
+      const pull = nextSteps.has(code)
+        ? Math.max(0, length - preferred) * 0.025
+        : !initialNeighbors.has(code) && !initiallyTaken.has(code)
+          ? Math.min(0, length - 650) * 0.015
+          : 0;
+      force[code].x -= (dx / length) * pull;
+      force[code].y -= (dy / length) * pull;
+    }
+    for (const code of codes) {
+      nodes[code].x += Math.max(-12, Math.min(12, force[code].x));
+      nodes[code].y += Math.max(-12, Math.min(12, force[code].y));
+    }
+  }
+  // A final separation pass protects the largest node and label footprints.
+  for (let pass = 0; pass < 200; pass++) {
+    let overlaps = false;
+    for (let i = 0; i < codes.length; i++)
+      for (let j = i + 1; j < codes.length; j++) {
+        const a = nodes[codes[i]],
+          b = nodes[codes[j]];
+        const dx = b.x - a.x || 0.01,
+          dy = b.y - a.y || 0.01;
+        const length = Math.hypot(dx, dy);
+        if (length >= 155) continue;
+        overlaps = true;
+        const shift = (156 - length) / 2;
+        a.x -= (dx / length) * shift;
+        a.y -= (dy / length) * shift;
+        b.x += (dx / length) * shift;
+        b.y += (dy / length) * shift;
+      }
+    if (!overlaps) break;
+  }
+  return nodes;
+})();
+
+type MapPoint = { x: number; y: number };
+type MapArea = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+const fitNeighborhood = (
+  code: string,
+  previous: Record<string, MapPoint>,
+  area: MapArea,
+  requestedZoom: number,
+) => {
+  const direct = [...new Set([...getPrerequisites(COURSES[code]), ...getDependents(code)])].filter(
+    (item) => item !== code,
+  );
+  const anchor = previous[code];
+  const initial = COURSE_POSITIONS["CPSC 110"];
+  let fitZoom = requestedZoom;
+  let placed: Record<string, MapPoint> = {};
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const halfWidth = (area.right - area.left) / fitZoom / 2;
+    const halfHeight = (area.bottom - area.top) / fitZoom / 2;
+    const fits = (point: MapPoint, radius: number) =>
+      Math.abs(point.x - anchor.x) + radius <= halfWidth &&
+      Math.abs(point.y - anchor.y) + radius <= halfHeight;
+    placed = { [code]: anchor };
+    const clear = (point: MapPoint, radius: number) =>
+      Object.entries(placed).every(
+        ([other, position]) =>
+          Math.hypot(position.x - point.x, position.y - point.y) >=
+          radius + (other === code ? 72 : 57) + 16,
+      );
+    const candidates: MapPoint[] = [];
+    for (let row = -Math.ceil(halfHeight / 145); row <= Math.ceil(halfHeight / 145); row++) {
+      for (let col = -Math.ceil(halfWidth / 150); col <= Math.ceil(halfWidth / 150); col++) {
+        const seed = Math.sin(row * 73 + col * 39);
+        const point = {
+          x: anchor.x + col * 150 + (Math.abs(row) % 2) * 70 + seed * 7,
+          y: anchor.y + row * 145 + Math.cos(col * 41 + row) * 8,
+        };
+        if (fits(point, 57)) candidates.push(point);
+      }
+    }
+    // Retain every currently valid direct star before relocating obstructed ones.
+    for (const neighbor of direct) {
+      if (fits(previous[neighbor], 57) && clear(previous[neighbor], 57))
+        placed[neighbor] = previous[neighbor];
+    }
+    for (const neighbor of direct) {
+      if (placed[neighbor]) continue;
+      const old = previous[neighbor];
+      const originalAngle = Math.atan2(old.y - anchor.y, old.x - anchor.x);
+      const score = (point: MapPoint) => {
+        const angle = Math.atan2(point.y - anchor.y, point.x - anchor.x);
+        const difference = Math.atan2(
+          Math.sin(angle - originalAngle),
+          Math.cos(angle - originalAngle),
+        );
+        return Math.hypot(point.x - old.x, point.y - old.y) + Math.abs(difference) * 160;
+      };
+      const available = candidates
+        .filter((point) => clear(point, 57))
+        .sort((a, b) => score(a) - score(b));
+      if (available[0]) placed[neighbor] = available[0];
+    }
+    if (fits(anchor, 72) && direct.every((neighbor) => placed[neighbor])) break;
+    fitZoom *= 0.9;
+  }
+  return {
+    positions: { ...previous, ...placed },
+    zoom: fitZoom,
+    pan: {
+      x: initial.x - anchor.x + ((area.left + area.right) / 2 - area.width / 2) / fitZoom,
+      y: initial.y - anchor.y + ((area.top + area.bottom) / 2 - area.height / 2) / fitZoom,
+    },
+  };
+};
+
 function App() {
-  const [completed, setCompleted] = useState(["CPSC 110", "MATH 100", "ENGL 110"]);
-  const [planned, setPlanned] = useState(["CPSC 210", "MATH 101"]);
+  const [completed, setCompleted] = useState([...INITIAL_COMPLETED]);
+  const [planned, setPlanned] = useState([...INITIAL_PLANNED]);
   const [center, setCenter] = useState("CPSC 110");
-  const [history, setHistory] = useState<string[]>([]);
+  const [history, setHistory] = useState<
+    { code: string; pan: MapPoint; zoom: number; positions: Record<string, MapPoint> }[]
+  >([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [zoom, setZoom] = useState(1);
+  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
   const stageRef = useRef<HTMLDivElement>(null);
-  const [viewport, setViewport] = useState({
-    width: 1000,
-    height: 700,
-    obstacles: [] as { left: number; right: number; top: number; bottom: number }[],
-  });
-
+  const [positions, setPositions] = useState(COURSE_POSITIONS);
+  const [mapArea, setMapArea] = useState<MapArea | null>(null);
   useLayoutEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
     const measure = () => {
       const bounds = stage.getBoundingClientRect();
-      const obstacles = Array.from(
-        stage.parentElement!.querySelectorAll(".progress-card, .map-label, .map-controls, .legend"),
-      ).map((element) => {
-        const rect = element.getBoundingClientRect();
-        return {
-          left: rect.left - bounds.left,
-          right: rect.right - bounds.left,
-          top: rect.top - bounds.top,
-          bottom: rect.bottom - bounds.top,
-        };
-      });
-      setViewport((previous) => {
-        const next = { width: bounds.width, height: bounds.height, obstacles };
-        return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
-      });
+      let left = 16,
+        top = 16,
+        bottom = bounds.height - 16;
+      stage
+        .parentElement!.querySelectorAll(".progress-card, .map-label, .map-controls, .legend")
+        .forEach((element) => {
+          const rect = element.getBoundingClientRect();
+          if (element.classList.contains("progress-card"))
+            left = Math.max(left, rect.right - bounds.left + 18);
+          else if (element.classList.contains("map-label"))
+            top = Math.max(top, rect.bottom - bounds.top + 18);
+          else bottom = Math.min(bottom, rect.top - bounds.top - 18);
+        });
+      const next = {
+        left,
+        top,
+        right: bounds.width - 16,
+        bottom,
+        width: bounds.width,
+        height: bounds.height,
+      };
+      setMapArea((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next));
     };
     const observer = new ResizeObserver(measure);
     observer.observe(stage);
@@ -166,210 +362,82 @@ function App() {
     measure();
     return () => observer.disconnect();
   }, []);
-
+  useLayoutEffect(() => {
+    if (!mapArea) return;
+    const fitted = fitNeighborhood(center, positions, mapArea, zoom);
+    setPositions(fitted.positions);
+    setPan(fitted.pan);
+    setZoom(fitted.zoom);
+    // Refitting is triggered only by a changed viewport, never popup or status state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapArea]);
   const direct = useMemo(() => {
     const current = COURSES[center];
     return [...new Set([...getPrerequisites(current), ...getDependents(center)])];
   }, [center]);
 
-  const second = useMemo(() => {
-    const expanded = direct.flatMap((code) => [
-      ...getPrerequisites(COURSES[code]),
-      ...getDependents(code),
-    ]);
-    return [...new Set(expanded)]
-      .filter((code) => code !== center && !direct.includes(code))
-      .sort((a, b) => {
-        const strength = (code: string) =>
-          direct.filter(
-            (neighbor) =>
-              getPrerequisites(COURSES[code]).includes(neighbor) ||
-              getPrerequisites(COURSES[neighbor]).includes(code),
-          ).length;
-        return strength(b) - strength(a) || a.localeCompare(b);
-      })
-      .slice(0, 6);
-  }, [center, direct]);
-
-  const visible = [center, ...direct, ...second];
-  const connections = useMemo(() => {
-    const primary = direct.map((code) =>
-      getPrerequisites(COURSES[center]).includes(code)
-        ? { from: code, to: center }
-        : { from: center, to: code },
-    );
-    // One real prerequisite link per secondary star keeps branches readable.
-    const secondary = second.flatMap((code) => {
-      const parent = direct.find(
-        (neighbor) =>
-          getPrerequisites(COURSES[code]).includes(neighbor) ||
-          getPrerequisites(COURSES[neighbor]).includes(code),
-      );
-      if (!parent) return [];
-      return [
-        getPrerequisites(COURSES[code]).includes(parent)
-          ? { from: parent, to: code }
-          : { from: code, to: parent },
-      ];
-    });
-    return [...primary, ...secondary];
-  }, [center, direct, second]);
-
-  const positions = useMemo(() => {
-    const { width, height, obstacles } = viewport;
-    const hash = (code: string) => {
-      let value = 2166136261;
-      for (const char of code) value = Math.imul(value ^ char.charCodeAt(0), 16777619);
-      return (value >>> 0) / 4294967296;
-    };
-    const codes = [center, ...direct.slice().sort(), ...second.slice().sort()];
-    const result: Record<string, { x: number; y: number; layer: number }> = {};
-    const radius = (code: string) => (code === center ? 72 : direct.includes(code) ? 57 : 39);
-    // Project complete node/label footprints out of the interface panels.
-    const constrain = (code: string) => {
-      const node = result[code];
-      const r = radius(code);
-      for (let pass = 0; pass < 4; pass++) {
-        node.x = Math.max(r + 12, Math.min(width - r - 12, node.x));
-        node.y = Math.max(r + 14, Math.min(height - r - 14, node.y));
-        for (const box of obstacles) {
-          const left = box.left - r - 12,
-            right = box.right + r + 12;
-          const top = box.top - r - 12,
-            bottom = box.bottom + r + 12;
-          if (node.x <= left || node.x >= right || node.y <= top || node.y >= bottom) continue;
-          const choices = [
-            { x: left, y: node.y },
-            { x: right, y: node.y },
-            { x: node.x, y: top },
-            { x: node.x, y: bottom },
-          ].filter(
-            (p) =>
-              p.x >= r + 12 && p.x <= width - r - 12 && p.y >= r + 14 && p.y <= height - r - 14,
-          );
-          choices.sort(
-            (a, b) =>
-              Math.hypot(a.x - node.x, a.y - node.y) - Math.hypot(b.x - node.x, b.y - node.y),
-          );
-          if (choices[0]) Object.assign(node, choices[0]);
+  const neighbors = (code: string) => [
+    ...new Set([...getPrerequisites(COURSES[code]), ...getDependents(code)]),
+  ];
+  const distances = useMemo(() => {
+    const result: Record<string, number> = { [center]: 0 };
+    let frontier = [center];
+    for (let depth = 1; depth <= 3; depth++) {
+      const next: string[] = [];
+      for (const code of frontier)
+        for (const neighbor of neighbors(code)) {
+          if (result[neighbor] !== undefined) continue;
+          result[neighbor] = depth;
+          next.push(neighbor);
         }
-      }
-    };
-    result[center] = { x: width * 0.55, y: height * 0.56, layer: 0 };
-    constrain(center);
-    const origin = { ...result[center] };
-    for (const code of codes.slice(1)) {
-      const layer = direct.includes(code) ? 1 : 2;
-      const parent =
-        layer === 1
-          ? center
-          : direct.find(
-              (neighbor) =>
-                getPrerequisites(COURSES[code]).includes(neighbor) ||
-                getPrerequisites(COURSES[neighbor]).includes(code),
-            ) || center;
-      const anchor = result[parent] || origin;
-      const angle = hash(code) * Math.PI * 2;
-      const distance = (layer === 1 ? 185 : 135) + hash(code + center) * 160;
-      result[code] = {
-        x: anchor.x + Math.cos(angle) * distance,
-        y: anchor.y + Math.sin(angle) * distance,
-        layer,
-      };
-      constrain(code);
-    }
-    const edges = connections;
-    // Seeded starting points + a fixed iteration count keep repeated selections stable.
-    for (let iteration = 0; iteration < 260; iteration++) {
-      const forces = Object.fromEntries(codes.map((code) => [code, { x: 0, y: 0 }]));
-      for (let i = 0; i < codes.length; i++) {
-        for (let j = i + 1; j < codes.length; j++) {
-          const a = codes[i],
-            b = codes[j];
-          const dx = result[b].x - result[a].x || 0.01;
-          const dy = result[b].y - result[a].y || 0.01;
-          const distance = Math.hypot(dx, dy);
-          const spacing = radius(a) + radius(b) + 48;
-          const push = Math.max(0, spacing - distance) * 0.34 + 720 / (distance * distance);
-          forces[a].x -= (dx / distance) * push;
-          forces[a].y -= (dy / distance) * push;
-          forces[b].x += (dx / distance) * push;
-          forces[b].y += (dy / distance) * push;
-        }
-      }
-      for (const { from, to } of edges) {
-        const a = result[from],
-          b = result[to];
-        const dx = b.x - a.x,
-          dy = b.y - a.y;
-        const distance = Math.hypot(dx, dy) || 1;
-        const desired = radius(from) + radius(to) + 100 + hash(from + to) * 95;
-        const pull = (distance - desired) * 0.025;
-        forces[from].x += (dx / distance) * pull;
-        forces[from].y += (dy / distance) * pull;
-        forces[to].x -= (dx / distance) * pull;
-        forces[to].y -= (dy / distance) * pull;
-        // Keep unrelated stars and their labels away from connecting lines.
-        for (const code of codes) {
-          if (code === from || code === to || code === center) continue;
-          const n = result[code];
-          const t = Math.max(
-            0.08,
-            Math.min(0.92, ((n.x - a.x) * dx + (n.y - a.y) * dy) / (distance * distance)),
-          );
-          const ox = n.x - a.x - t * dx,
-            oy = n.y - a.y - t * dy;
-          const gap = Math.hypot(ox, oy) || 1;
-          const push = Math.max(0, radius(code) + 24 - gap) * 0.08;
-          forces[code].x += (ox / gap) * push;
-          forces[code].y += (oy / gap) * push;
-        }
-      }
-      for (const code of codes.slice(1)) {
-        const node = result[code];
-        const force = forces[code];
-        node.x += Math.max(-9, Math.min(9, force.x + (origin.x - node.x) * 0.0008));
-        node.y += Math.max(-9, Math.min(9, force.y + (origin.y - node.y) * 0.0008));
-        constrain(code);
-      }
-    }
-    // Resolve remaining label collisions after the spring forces settle.
-    for (let pass = 0; pass < 120; pass++) {
-      let overlaps = 0;
-      for (let i = 0; i < codes.length; i++) {
-        for (let j = i + 1; j < codes.length; j++) {
-          const a = codes[i],
-            b = codes[j];
-          const first = result[a],
-            last = result[b];
-          const dx = last.x - first.x,
-            dy = last.y - first.y;
-          const distance = Math.hypot(dx, dy);
-          const minimum = radius(a) + radius(b) + 12;
-          if (distance >= minimum) continue;
-          overlaps++;
-          const angle = distance < 0.01 ? hash(a + b) * Math.PI * 2 : Math.atan2(dy, dx);
-          const shift = minimum - distance + 1;
-          const share = a === center ? 0 : 0.5;
-          first.x -= Math.cos(angle) * shift * share;
-          first.y -= Math.sin(angle) * shift * share;
-          last.x += Math.cos(angle) * shift * (1 - share);
-          last.y += Math.sin(angle) * shift * (1 - share);
-          if (a !== center) constrain(a);
-          constrain(b);
-        }
-      }
-      if (!overlaps) break;
+      frontier = next;
     }
     return result;
-  }, [center, direct, second, viewport, connections]);
+  }, [center]);
+  const primary = [center, ...direct];
+  const secondaryCandidates = COURSE_LIST.map((course) => course.code).filter(
+    (code) =>
+      distances[code] === 2 &&
+      primary.every(
+        (other) =>
+          Math.hypot(
+            positions[code].x - positions[other].x,
+            positions[code].y - positions[other].y,
+          ) > (other === center ? 120 : 105),
+      ),
+  );
+  const secondary: string[] = [];
+  for (const code of secondaryCandidates) {
+    if (secondary.length === 6) break;
+    if (
+      secondary.every(
+        (other) =>
+          Math.hypot(
+            positions[code].x - positions[other].x,
+            positions[code].y - positions[other].y,
+          ) >= 90,
+      )
+    )
+      secondary.push(code);
+  }
+  const visible = [...primary, ...secondary];
+  const visibleSet = new Set(visible);
+  const connections = NETWORK_EDGES.filter(
+    ({ from, to }) => visibleSet.has(from) && visibleSet.has(to),
+  );
+  const layer = (code: string) => Math.min(2, distances[code] ?? 3);
+  const initial = COURSE_POSITIONS["CPSC 110"];
 
   const focusCourse = (code: string, showDetails = true) => {
     if (code !== center) {
-      setHistory((items) => [...items, center]);
+      setHistory((items) => [...items, { code: center, pan: { ...pan }, zoom, positions }]);
       setCenter(code);
-      setPan({ x: 0, y: 0 });
-      setZoom(1);
+      if (mapArea) {
+        const fitted = fitNeighborhood(code, positions, mapArea, zoom);
+        setPositions(fitted.positions);
+        setPan(fitted.pan);
+        setZoom(fitted.zoom);
+      }
     }
     setSelected(showDetails ? code : null);
   };
@@ -578,7 +646,7 @@ function App() {
           className="graph-stage"
           onWheel={(event) => {
             event.preventDefault();
-            setZoom((value) => Math.min(1.45, Math.max(0.65, value - event.deltaY * 0.001)));
+            setZoom((value) => Math.min(1.45, Math.max(0.35, value - event.deltaY * 0.001)));
           }}
           onPointerDown={(event) => {
             if ((event.target as HTMLElement).closest("button")) return;
@@ -588,8 +656,8 @@ function App() {
           onPointerMove={(event) => {
             if (!drag.current) return;
             setPan({
-              x: drag.current.px + event.clientX - drag.current.x,
-              y: drag.current.py + event.clientY - drag.current.y,
+              x: drag.current.px + (event.clientX - drag.current.x) / zoom,
+              y: drag.current.py + (event.clientY - drag.current.y) / zoom,
             });
           }}
           onPointerUp={() => {
@@ -602,14 +670,15 @@ function App() {
           <div
             className="graph-transform"
             style={{
-              width: viewport.width,
-              height: viewport.height,
+              width: WORLD.width,
+              height: WORLD.height,
               left: "50%",
               top: "50%",
-              transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})`,
+              transform: `translate(calc(-50% + ${(WORLD.width / 2 - initial.x + pan.x) * zoom}px), calc(-50% + ${(WORLD.height / 2 - initial.y + pan.y) * zoom}px)) scale(${zoom})`,
+              transition: drag.current ? "none" : "transform 0.3s ease-out",
             }}
           >
-            <svg className="connection-layer" viewBox={`0 0 ${viewport.width} ${viewport.height}`}>
+            <svg className="connection-layer" viewBox={`0 0 ${WORLD.width} ${WORLD.height}`}>
               <defs>
                 <marker
                   id="arrow"
@@ -629,18 +698,21 @@ function App() {
                 const dx = b.x - a.x;
                 const dy = b.y - a.y;
                 const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-                const startR = a.layer === 0 ? 53 : a.layer === 1 ? 43 : 32;
-                const endR = b.layer === 0 ? 62 : b.layer === 1 ? 52 : 40;
+                const startR = layer(from) === 0 ? 53 : layer(from) === 1 ? 43 : 32;
+                const endR = layer(to) === 0 ? 62 : layer(to) === 1 ? 52 : 40;
                 return (
                   <line
-                    style={{ transition: "all 0.7s cubic-bezier(0.2, 0.8, 0.2, 1)" }}
+                    style={{
+                      opacity: from === center || to === center ? 1 : 0.22,
+                      transition: "opacity 0.25s ease",
+                    }}
                     key={`${from}-${to}`}
                     x1={a.x + (dx / length) * startR}
                     y1={a.y + (dy / length) * startR}
                     x2={b.x - (dx / length) * endR}
                     y2={b.y - (dy / length) * endR}
                     className={
-                      a.layer === 2 || b.layer === 2 ? "connection secondary" : "connection"
+                      layer(from) === 2 || layer(to) === 2 ? "connection secondary" : "connection"
                     }
                     markerEnd="url(#arrow)"
                   />
@@ -653,8 +725,21 @@ function App() {
               return (
                 <button
                   key={code}
-                  className={`course-node layer-${pos.layer} ${nodeStatus}`}
-                  style={{ left: pos.x, top: pos.y }}
+                  className={`course-node layer-${layer(code)} ${nodeStatus}`}
+                  style={{
+                    transition:
+                      "left 0.25s ease-out, top 0.25s ease-out, opacity 0.2s, filter 0.2s",
+                    left: pos.x,
+                    top: pos.y,
+                    opacity:
+                      code === center || direct.includes(code)
+                        ? 1
+                        : distances[code] === 2
+                          ? 0.38
+                          : 0.16,
+                    outline: code === center ? "1px solid rgba(215, 229, 255, 0.65)" : undefined,
+                    filter: code === center ? "brightness(1.25)" : undefined,
+                  }}
                   onClick={(event) => {
                     event.stopPropagation();
                     focusCourse(code);
@@ -663,10 +748,10 @@ function App() {
                 >
                   <span className="node-glow" />
                   <span className="node-core">
-                    {pos.layer === 0 && <span className="center-dot" />}
+                    {layer(code) === 0 && <span className="center-dot" />}
                   </span>
                   <strong>{code}</strong>
-                  {pos.layer < 2 && <small>{COURSES[code].title}</small>}
+                  {layer(code) < 2 && <small>{COURSES[code].title}</small>}
                 </button>
               );
             })}
@@ -685,17 +770,18 @@ function App() {
             onClick={() => {
               const previous = history[history.length - 1];
               if (!previous) return;
-              setCenter(previous);
+              setCenter(previous.code);
               setHistory((items) => items.slice(0, -1));
               setSelected(null);
-              setPan({ x: 0, y: 0 });
-              setZoom(1);
+              setPositions(previous.positions);
+              setPan(previous.pan);
+              setZoom(previous.zoom);
             }}
           >
             <Icon name="back" /> Back
           </button>
           <span />
-          <button aria-label="Zoom out" onClick={() => setZoom((v) => Math.max(0.65, v - 0.15))}>
+          <button aria-label="Zoom out" onClick={() => setZoom((v) => Math.max(0.35, v - 0.15))}>
             <Icon name="minus" />
           </button>
           <b>{Math.round(zoom * 100)}%</b>
@@ -708,8 +794,12 @@ function App() {
               setCenter("CPSC 110");
               setHistory([]);
               setSelected(null);
-              setZoom(1);
-              setPan({ x: 0, y: 0 });
+              if (mapArea) {
+                const fitted = fitNeighborhood("CPSC 110", COURSE_POSITIONS, mapArea, DEFAULT_ZOOM);
+                setPositions(fitted.positions);
+                setPan(fitted.pan);
+                setZoom(fitted.zoom);
+              }
             }}
           >
             <Icon name="reset" /> Reset
@@ -757,8 +847,8 @@ function App() {
               <Icon name="x" />
             </button>
             <div className="detail-topline">
-              <span className={`status-chip ${statusLabel(currentDetails.code)}`}>
-                {status(currentDetails.code)}
+              <span className={`status-chip ${status(currentDetails.code)}`}>
+                {statusLabel(currentDetails.code)}
               </span>
               <span>
                 {currentDetails.creditsLabel === "1"
