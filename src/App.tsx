@@ -229,7 +229,9 @@ function App() {
                 {requirements[0].done} <small>/ 120 credits</small>
               </h2>
             </div>
-            <div className="degree-badge">30%</div>
+            <div className="degree-badge">
+              {Math.min(100, Math.round((requirements[0].done / requirements[0].target) * 100))}%
+            </div>
           </div>
           <div className="requirement-list">
             {requirements.map((req) => (
@@ -251,7 +253,7 @@ function App() {
                   <span
                     className="plan"
                     style={{
-                      width: `${Math.min(100 - (req.done / req.target) * 100, (req.plan / req.target) * 100)}%`,
+                      width: `${Math.max(0, Math.min(100 - (req.done / req.target) * 100, (req.plan / req.target) * 100))}%`,
                     }}
                   />
                 </div>
@@ -380,12 +382,13 @@ function App() {
           <button
             disabled={!history.length}
             onClick={() => {
-              const previous = history.at(-1);
+              const previous = history[history.length - 1];
               if (!previous) return;
               setCenter(previous);
               setHistory((items) => items.slice(0, -1));
               setSelected(null);
               setPan({ x: 0, y: 0 });
+              setZoom(1);
             }}
           >
             <Icon name="back" /> Back
