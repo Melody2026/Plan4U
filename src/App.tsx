@@ -317,6 +317,7 @@ function App() {
     { code: string; pan: MapPoint; zoom: number; positions: Record<string, MapPoint> }[]
   >([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [hoveredCourse, setHoveredCourse] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -425,6 +426,7 @@ function App() {
   const connections = NETWORK_EDGES.filter(
     ({ from, to }) => visibleSet.has(from) && visibleSet.has(to),
   );
+  const relationshipFocus = hoveredCourse && visibleSet.has(hoveredCourse) ? hoveredCourse : center;
   const layer = (code: string) => Math.min(2, distances[code] ?? 3);
   const initial = COURSE_POSITIONS["CPSC 110"];
 
@@ -680,19 +682,35 @@ function App() {
           >
             <svg className="connection-layer" viewBox={`0 0 ${WORLD.width} ${WORLD.height}`}>
               <defs>
-                <marker
-                  id="arrow"
-                  markerWidth="8"
-                  markerHeight="8"
-                  refX="6"
-                  refY="3"
-                  orient="auto"
-                  markerUnits="strokeWidth"
-                >
-                  <path d="M0,0 L0,6 L7,3 z" fill="#7d8ba9" />
-                </marker>
+                {[
+                  { id: "arrow", color: "#7d8ba9" },
+                  { id: "arrow-incoming", color: "#62e4f4" },
+                  { id: "arrow-outgoing", color: "#ffa65c" },
+                ].map(({ id, color }) => (
+                  <marker
+                    key={id}
+                    id={id}
+                    markerWidth="8"
+                    markerHeight="8"
+                    refX="6"
+                    refY="3"
+                    orient="auto"
+                    markerUnits="strokeWidth"
+                  >
+                    <path d="M0,0 L0,6 L7,3 z" fill={color} />
+                  </marker>
+                ))}
               </defs>
               {connections.map(({ from, to }) => {
+                const incoming = to === relationshipFocus;
+                const outgoing = from === relationshipFocus;
+                const highlighted = incoming || outgoing;
+                const alpha = layer(from) === 2 || layer(to) === 2 ? 0.22 : 0.46;
+                const arrowColor = incoming
+                  ? `rgba(98, 228, 244, ${alpha})`
+                  : outgoing
+                    ? `rgba(255, 166, 92, ${alpha})`
+                    : undefined;
                 const a = positions[from];
                 const b = positions[to];
                 const dx = b.x - a.x;
@@ -704,7 +722,8 @@ function App() {
                   <line
                     style={{
                       opacity: from === center || to === center ? 1 : 0.22,
-                      transition: "opacity 0.25s ease",
+                      stroke: arrowColor,
+                      transition: "stroke 0.18s ease",
                     }}
                     key={`${from}-${to}`}
                     x1={a.x + (dx / length) * startR}
@@ -714,7 +733,7 @@ function App() {
                     className={
                       layer(from) === 2 || layer(to) === 2 ? "connection secondary" : "connection"
                     }
-                    markerEnd="url(#arrow)"
+                    markerEnd={`url(#${incoming ? "arrow-incoming" : outgoing ? "arrow-outgoing" : "arrow"})`}
                   />
                 );
               })}
@@ -740,6 +759,10 @@ function App() {
                     outline: code === center ? "1px solid rgba(215, 229, 255, 0.65)" : undefined,
                     filter: code === center ? "brightness(1.25)" : undefined,
                   }}
+                  onMouseEnter={() => setHoveredCourse(code)}
+                  onMouseLeave={() => setHoveredCourse(null)}
+                  onFocus={() => setHoveredCourse(code)}
+                  onBlur={() => setHoveredCourse(null)}
                   onClick={(event) => {
                     event.stopPropagation();
                     focusCourse(code);
@@ -806,7 +829,10 @@ function App() {
           </button>
         </div>
 
-        <div className="legend glass-panel">
+        <div
+          className="legend glass-panel"
+          style={{ flexWrap: "wrap", maxWidth: "calc(100% - 56px)", rowGap: 8 }}
+        >
           <span>
             <i className="satisfied" />
             Prerequisites satisfied
@@ -823,6 +849,20 @@ function App() {
             <i className="available" />
             Other courses
           </span>
+          <div style={{ flexBasis: "100%", display: "grid", gap: 4, fontSize: 8 }}>
+            <span>
+              <span style={{ color: "#62e4f4", fontSize: 14 }} aria-hidden="true">
+                &#8594;
+              </span>{" "}
+              Cyan arrow: Prerequisite.
+            </span>
+            <span>
+              <span style={{ color: "#ffa65c", fontSize: 14 }} aria-hidden="true">
+                &#8594;
+              </span>{" "}
+              Orange arrow: Dependent course.
+            </span>
+          </div>
         </div>
 
         {currentDetails && (
