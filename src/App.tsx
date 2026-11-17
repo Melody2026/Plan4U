@@ -383,14 +383,17 @@ function AppHeader({
   view,
   onViewChange,
   onCourseSelect,
+  onReset,
 }: {
   view: "constellation" | "search";
   onViewChange: (view: "constellation" | "search") => void;
   onCourseSelect: (code: string) => void;
+  onReset: () => void;
 }) {
   return (
     <header className="topbar">
       <div className="topbar-content">
+        <button className="brand-home" onClick={onReset} aria-label="Reset to the default constellation">
         <div className="brand-mark">
           <span className="brand-orbit" />
           <span className="brand-core" />
@@ -399,6 +402,7 @@ function AppHeader({
           <div className="brand-name">CoursePath</div>
           <div className="brand-subtitle">UBC · BSc Computer Science</div>
         </div>
+        </button>
         <nav className="view-tabs" aria-label="Workspace views">
           <button
             aria-current={view === "constellation" ? "page" : undefined}
@@ -1136,7 +1140,7 @@ function App() {
   const [takenEditorOpen, setTakenEditorOpen] = useState(false);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const drag = useRef<{ x: number; y: number; px: number; py: number; moved: boolean; hadPopup: boolean } | null>(null);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const [positions, setPositions] = useState(COURSE_POSITIONS);
@@ -1257,6 +1261,29 @@ function App() {
   const layer = (code: string) => Math.min(2, distances[code] ?? 3);
   const initial = COURSE_POSITIONS["CPSC 110"];
 
+  const goBack = () => {
+    const previous = history[history.length - 1];
+    if (!previous) return;
+    setCenter(previous.code);
+    setHistory((items) => items.slice(0, -1));
+    setSelected(null);
+    setPositions(previous.positions);
+    setPan(previous.pan);
+    setZoom(previous.zoom);
+  };
+  const resetConstellation = () => {
+    setView("constellation");
+    setCenter("CPSC 110");
+    setHistory([]);
+    setSelected(null);
+    if (mapArea) {
+      const fitted = fitNeighborhood("CPSC 110", COURSE_POSITIONS, mapArea, DEFAULT_ZOOM);
+      setPositions(fitted.positions);
+      setPan(fitted.pan);
+      setZoom(fitted.zoom);
+    }
+  };
+
   const focusCourse = (code: string, showDetails = true) => {
     if (code === center) {
       setSelected(showDetails ? code : null);
@@ -1373,6 +1400,7 @@ function App() {
     <main className={`app-shell ${view === "search" ? "search-view" : ""}`}>
       <AppHeader
         view={view}
+        onReset={resetConstellation}
         onCourseSelect={(code) => {
           focusCourse(code, false);
           setSelected(code);
@@ -1458,18 +1486,21 @@ function App() {
             setZoom((value) => Math.min(1.45, Math.max(0.35, value - event.deltaY * 0.001)));
           }}
           onPointerDown={(event) => {
-            if ((event.target as HTMLElement).closest("button")) return;
-            drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y };
+            if (event.button !== 0 || (event.target as Element).closest("button, a, input, select, [role='button']")) return;
+            drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y, moved: false, hadPopup: Boolean(selected) };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerMove={(event) => {
             if (!drag.current) return;
+            if (Math.hypot(event.clientX - drag.current.x, event.clientY - drag.current.y) < 5 && !drag.current.moved) return;
+            drag.current.moved = true;
             setPan({
               x: drag.current.px + (event.clientX - drag.current.x) / zoom,
               y: drag.current.py + (event.clientY - drag.current.y) / zoom,
             });
           }}
           onPointerUp={() => {
+            if (drag.current && !drag.current.moved && !drag.current.hadPopup) goBack();
             drag.current = null;
           }}
           onPointerCancel={() => {
@@ -1596,16 +1627,7 @@ function App() {
                 <div className="map-controls glass-panel">
                   <button
                     disabled={!history.length}
-                    onClick={() => {
-                      const previous = history[history.length - 1];
-                      if (!previous) return;
-                      setCenter(previous.code);
-                      setHistory((items) => items.slice(0, -1));
-                      setSelected(null);
-                      setPositions(previous.positions);
-                      setPan(previous.pan);
-                      setZoom(previous.zoom);
-                    }}
+                    onClick={goBack}
                   >
                     <Icon name="back" /> Back
                   </button>
@@ -1625,22 +1647,7 @@ function App() {
                   </button>
                   <span />
                   <button
-                    onClick={() => {
-                      setCenter("CPSC 110");
-                      setHistory([]);
-                      setSelected(null);
-                      if (mapArea) {
-                        const fitted = fitNeighborhood(
-                          "CPSC 110",
-                          COURSE_POSITIONS,
-                          mapArea,
-                          DEFAULT_ZOOM,
-                        );
-                        setPositions(fitted.positions);
-                        setPan(fitted.pan);
-                        setZoom(fitted.zoom);
-                      }
-                    }}
+                    onClick={resetConstellation}
                   >
                     <Icon name="reset" /> Reset
                   </button>

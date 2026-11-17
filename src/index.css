@@ -790,6 +790,15 @@
   height: 36px;
   margin-right: 2px;
 }
+.brand-home {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.brand-home:hover { filter: brightness(1.2); }
 .brand-orbit {
   position: absolute;
   inset: 3px;
