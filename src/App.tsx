@@ -29,81 +29,22 @@ const CourseCode = ({ code }: { code: string }) => (
 );
 
 const gradeLabel = (value: number | null | undefined) =>
-  value == null ? "Not available" : `${value.toFixed(1)}%`;
-const ratingLabel = (value: number | null | undefined) =>
-  value == null ? "Not available" : `${value.toFixed(1)} / 5`;
+  value == null ? "Not published" : `${value.toFixed(1)}%`;
 
 function HistoricalStatistics({ course }: { course: Course }) {
-  const professors = course.professors ?? [];
+  const professorNames = [
+    ...new Set((course.professors ?? []).map((professor) => professor.name.trim()).filter(Boolean)),
+  ];
   return (
-    <section
-      className="historical-statistics"
-      aria-label={`Historical statistics for ${course.code}`}
-    >
-      <div className="historical-heading">
-        Historical average <strong>{gradeLabel(course.averageGrade)}</strong>
+    <section className="course-facts" aria-label={`Course statistics for ${course.code}`}>
+      <div className="course-fact course-fact-grade">
+        <span>AVG. GRADE</span>
+        <strong>{gradeLabel(course.averageGrade)}</strong>
       </div>
-      <p>
-        {course.averageGradePeriod ?? "Period: Not available"}
-        {course.gradeSampleSize != null &&
-          ` · ${course.gradeSampleSize.toLocaleString()} graded registrations`}
-      </p>
-      <p>
-        Historical instructors:{" "}
-        {professors.length
-          ? professors
-              .slice(0, 2)
-              .map((p) => p.name)
-              .join(", ") + (professors.length > 2 ? ` +${professors.length - 2} more` : "")
-          : "Not available"}
-      </p>
-      <details>
-        <summary>Instructors &amp; sources</summary>
-        <p>Available sessions: {course.availableSessions?.join(", ") || "Not available"}</p>
-        <p>
-          Past teaching records, excluding teaching assistants; future instructors may differ. Names
-          do not imply academic rank. Instructor averages describe their sections, including
-          co-taught sections, within the same period.
-        </p>
-        {professors.map((professor) => (
-          <div className="historical-professor" key={professor.name}>
-            <strong>{professor.name}</strong>
-            <p>Last taught in this period: {professor.lastTaught ?? "Not available"}</p>
-            <p>Sessions: {professor.teachingSessions?.join(", ") || "Not available"}</p>
-            <p>Section average: {gradeLabel(professor.averageGrade)}</p>
-            <p>
-              Rating: {ratingLabel(professor.rating)} · Difficulty:{" "}
-              {ratingLabel(professor.difficulty)} · Reviews:{" "}
-              {professor.numberOfRatings ?? "Not available"}
-            </p>
-            <a href={professor.rateMyProfessorUrl} target="_blank" rel="noreferrer">
-              Find on Rate My Professors ↗
-            </a>
-          </div>
-        ))}
-        {!professors.length && <p>Instructor information and ratings: Not available</p>}
-        <p>
-          Numerical ratings are not imported without an authorized source. Search links are not
-          verified profiles.
-        </p>
-        {course.averageGradeSource && (
-          <a href={course.averageGradeSource} target="_blank" rel="noreferrer">
-            UBCGrades course profile (all-time statistics) ↗
-          </a>
-        )}
-        <div className="historical-sources">
-          {course.statisticsSources?.map((source) => (
-            <a key={source} href={source} target="_blank" rel="noreferrer">
-              {source.split("/").at(-3)} session data ↗
-            </a>
-          ))}
-        </div>
-        <p>
-          Average weighted by reported graded registrations, counting each session once. Missing
-          sections may limit coverage; no values are inferred.
-        </p>
-        <p>Updated: {course.statisticsUpdatedAt?.slice(0, 10) ?? "Not available"}</p>
-      </details>
+      <div className="course-fact course-fact-professor">
+        <span>PROFESSOR</span>
+        <strong>{professorNames.length ? professorNames.join(", ") : "Not available"}</strong>
+      </div>
     </section>
   );
 }
@@ -112,7 +53,18 @@ const Icon = ({
   name,
   size = 18,
 }: {
-  name: "search" | "plus" | "minus" | "x" | "back" | "reset" | "check" | "chevron" | "star";
+  name:
+    | "search"
+    | "plus"
+    | "minus"
+    | "x"
+    | "back"
+    | "reset"
+    | "check"
+    | "chevron"
+    | "star"
+    | "constellation"
+    | "compare";
   size?: number;
 }) => {
   const paths = {
@@ -147,6 +99,20 @@ const Icon = ({
     check: <path d="m6 12 4 4 8-9" />,
     chevron: <path d="m9 18 6-6-6-6" />,
     star: <path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7L12 3Z" />,
+    constellation: (
+      <>
+        <circle cx="6" cy="8" r="1.5" />
+        <circle cx="17" cy="5" r="1.5" />
+        <circle cx="15" cy="17" r="1.5" />
+        <path d="m7.5 7.6 8-2.2M16.6 6.4 15.4 15.5M7 9.2l7 6.7" />
+      </>
+    ),
+    compare: (
+      <>
+        <circle cx="9" cy="9" r="4.5" />
+        <path d="m12.3 12.3 5.2 5.2M15 5h4M17 3v4" />
+      </>
+    ),
   };
   return (
     <svg
@@ -164,6 +130,95 @@ const Icon = ({
     </svg>
   );
 };
+
+function AppHeader({
+  view,
+  onViewChange,
+}: {
+  view: "constellation" | "search";
+  onViewChange: (view: "constellation" | "search") => void;
+}) {
+  return (
+    <header className="topbar">
+      <div className="brand-mark">
+        <span className="brand-orbit" />
+        <span className="brand-core" />
+      </div>
+      <div>
+        <div className="brand-name">CoursePath</div>
+        <div className="brand-subtitle">UBC · BSc Computer Science</div>
+      </div>
+      <nav className="view-tabs" aria-label="Workspace views">
+        <button
+          aria-current={view === "constellation" ? "page" : undefined}
+          onClick={() => onViewChange("constellation")}
+        >
+          <Icon name="constellation" size={15} />
+          Constellation
+        </button>
+        <button
+          aria-current={view === "search" ? "page" : undefined}
+          onClick={() => onViewChange("search")}
+        >
+          <Icon name="compare" size={15} />
+          Search &amp; Compare
+        </button>
+      </nav>
+    </header>
+  );
+}
+
+function PlannedCourseList({
+  planned,
+  onRemove,
+  onSelect,
+}: {
+  planned: string[];
+  onRemove: (code: string) => void;
+  onSelect?: (code: string) => void;
+}) {
+  return (
+    <div className="course-list shared-planned-list">
+      {planned.map((code) => (
+        <div className="list-item" key={code}>
+          {onSelect ? (
+            <button className="course-link" onClick={() => onSelect(code)}>
+              <i className="status-dot planned" />
+              <span>
+                <strong>
+                  <CourseCode code={code} />
+                </strong>
+                <small>{COURSES[code].title}</small>
+              </span>
+            </button>
+          ) : (
+            <div className="course-link">
+              <i className="status-dot planned" />
+              <span>
+                <strong>
+                  <CourseCode code={code} />
+                </strong>
+                <small>{COURSES[code].title}</small>
+              </span>
+            </div>
+          )}
+          <button
+            className="remove-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRemove(code);
+            }}
+            aria-label={`Remove ${code} from plan`}
+            title="Remove course"
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+      ))}
+      {!planned.length && <div className="empty-state">No planned courses.</div>}
+    </div>
+  );
+}
 
 const getPrerequisites = (course: Course) =>
   [...new Set([...course.prerequisitePaths.flat(), ...course.corequisiteGroups.flat()])].filter(
@@ -631,40 +686,8 @@ function SearchCompare({
       </section>
       <div className="sc-right">
         <section className="sc-panel sc-planned">
-          <div>
-            <span className="eyebrow">My workspace</span>
-            <h2>
-              Planned Courses <span className="sc-count">{planned.length}</span>
-            </h2>
-            <p>Your shared plan, across both views.</p>
-          </div>
-          <div className="sc-planned-list">
-            {planned.map((code) => (
-              <div className="sc-planned-course" key={code}>
-                <i className="status-dot planned" />
-                <div>
-                  <strong>
-                    <CourseCode code={code} />
-                  </strong>
-                  <p>{COURSES[code].title}</p>
-                </div>
-                <button
-                  className="sc-remove"
-                  aria-label={`Remove ${code} from plan`}
-                  onClick={() => removePlan(code)}
-                >
-                  <Icon name="x" size={15} />
-                </button>
-              </div>
-            ))}
-            {!planned.length && (
-              <p className="sc-empty">Your plan is empty. Add a course from the catalog.</p>
-            )}
-          </div>
-          <p className="sc-footnote">
-            {planned.reduce((total, code) => total + COURSES[code].credits, 0)} planned credits ·
-            Degree progress updates automatically
-          </p>
+          <h2>Planned Courses</h2>
+          <PlannedCourseList planned={planned} onRemove={removePlan} />
         </section>
         <section className="sc-panel sc-compare">
           <span className="eyebrow">Explore your options</span>
@@ -701,9 +724,6 @@ function SearchCompare({
           >
             Compare
           </button>
-          <p className="sc-footnote">
-            Select two different courses. Search interests carry into the comparison.
-          </p>
         </section>
       </div>
       <dialog
@@ -1105,33 +1125,13 @@ function App() {
   return (
     <main className={`app-shell ${view === "search" ? "search-view" : ""}`}>
       <section className="map-workspace" aria-label="Course prerequisite map">
-        <header className="topbar">
-          <div className="brand-mark">
-            <span className="brand-orbit" />
-            <span className="brand-core" />
-          </div>
-          <div>
-            <div className="brand-name">CoursePath</div>
-            <div className="brand-subtitle">UBC · BSc Computer Science</div>
-          </div>
-          <nav className="view-tabs" aria-label="Workspace views">
-            <button
-              aria-current={view === "constellation" ? "page" : undefined}
-              onClick={() => setView("constellation")}
-            >
-              Constellation
-            </button>
-            <button
-              aria-current={view === "search" ? "page" : undefined}
-              onClick={() => {
-                setSelected(null);
-                setView("search");
-              }}
-            >
-              Search &amp; Compare
-            </button>
-          </nav>
-        </header>
+        <AppHeader
+          view={view}
+          onViewChange={(nextView) => {
+            if (nextView === "search") setSelected(null);
+            setView(nextView);
+          }}
+        />
 
         <div className="progress-card glass-panel">
           <div className="panel-heading">
@@ -1545,7 +1545,6 @@ function App() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <div>
-            <span className="eyebrow">My workspace</span>
             <h2>Course plan</h2>
           </div>
           <button aria-label="Collapse sidebar">
@@ -1681,52 +1680,18 @@ function App() {
           <div className="section-title">
             <div>
               <span className="section-icon yellow">
-                <Icon name="star" size={14} />
+                <i className="status-dot planned" />
               </span>
               <h3>Courses planned</h3>
             </div>
             <span>{planned.length}</span>
           </div>
-          <div className="course-list">
-            {planned.map((code) => (
-              <div className="list-item" key={code}>
-                <button className="course-link" onClick={() => focusCourse(code, false)}>
-                  <i className="status-dot planned" />
-                  <span>
-                    <strong>
-                      <CourseCode code={code} />
-                    </strong>
-                    <small>{COURSES[code].title}</small>
-                  </span>
-                </button>
-                <button
-                  className="remove-button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setPlanned((items) => items.filter((item) => item !== code));
-                  }}
-                  aria-label={`Remove ${code} from plan`}
-                  title="Remove course"
-                >
-                  <Icon name="x" size={14} />
-                </button>
-              </div>
-            ))}
-            {!planned.length && (
-              <div className="empty-state">Select a course star to add it to your plan.</div>
-            )}
-          </div>
+          <PlannedCourseList
+            planned={planned}
+            onSelect={(code) => focusCourse(code, false)}
+            onRemove={(code) => setPlanned((items) => items.filter((item) => item !== code))}
+          />
         </section>
-        <footer className="sidebar-footer">
-          <div className="avatar">AM</div>
-          <div>
-            <strong>Alex Morgan</strong>
-            <span>Year 2 · {requirements[0].done} credits</span>
-          </div>
-          <button aria-label="Open profile">
-            <Icon name="chevron" size={16} />
-          </button>
-        </footer>
       </aside>
       <div className="search-view-content" hidden={view !== "search"}>
         <SearchCompare

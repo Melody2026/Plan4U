@@ -165,10 +165,6 @@ async function main() {
           );
           return {
             name,
-            rating: null,
-            difficulty: null,
-            numberOfRatings: null,
-            rateMyProfessorUrl: `https://www.ratemyprofessors.com/search/professors?q=${encodeURIComponent(name)}`,
             lastTaught: sessions.at(-1),
             averageGrade: weightedAverage(taught).average,
             teachingSessions: sessions,

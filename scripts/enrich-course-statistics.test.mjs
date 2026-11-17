@@ -58,7 +58,7 @@ test("period needs three fully available, completed academic years", () => {
   assert.deepEqual(choosePeriod(sessions, new Date("2026-11-17")).sessions, sessions.slice(0, 6));
   assert.throws(() => choosePeriod(sessions, new Date("2024-01-01")), /No three/);
 });
-test("saved snapshot contains only valid statistics and no unlicensed ratings", async () => {
+test("saved snapshot contains valid grades and historical instructor records", async () => {
   const data = JSON.parse(
     await readFile(new URL("../src/data/course-statistics.json", import.meta.url)),
   );
@@ -83,9 +83,8 @@ test("saved snapshot contains only valid statistics and no unlicensed ratings", 
       code,
     );
     for (const p of c.professors) {
-      assert.equal(p.rating, null);
-      assert.equal(p.difficulty, null);
-      assert.equal(p.numberOfRatings, null);
+      assert.ok(typeof p.name === "string" && p.name.trim());
+      assert.ok(p.averageGrade === null || (p.averageGrade >= 0 && p.averageGrade <= 100));
       assert.ok(p.teachingSessions.every((s) => report.period.sessions.includes(s)));
       assert.ok(p.teachingSessions.includes(p.lastTaught));
     }

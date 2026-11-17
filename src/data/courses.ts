@@ -2,10 +2,6 @@ import courseStatistics from "./course-statistics.json";
 
 export type Professor = {
   name: string;
-  rating: number | null;
-  difficulty: number | null;
-  numberOfRatings: number | null;
-  rateMyProfessorUrl: string;
   lastTaught: string | null;
   averageGrade: number | null;
   teachingSessions?: string[];
