@@ -647,6 +647,7 @@ type MapArea = {
   bottom: number;
   width: number;
   height: number;
+  obstacles: { left: number; right: number; top: number; bottom: number }[];
 };
 const fitNeighborhood = (
   code: string,
@@ -664,11 +665,20 @@ const fitNeighborhood = (
   // Prefer the larger view, reducing it in small steps only when direct nodes
   // cannot fit with their existing label clearance inside the unobstructed area.
   for (let attempt = 0; attempt < 80; attempt++) {
-    const halfWidth = (area.right - area.left) / fitZoom / 2;
+    const halfWidth = Math.min(area.width / 2 - area.left, area.right - area.width / 2) / fitZoom;
     const halfHeight = (area.bottom - area.top) / fitZoom / 2;
+    const centerX = area.width / 2;
+    const centerY = (area.top + area.bottom) / 2;
     const fits = (point: MapPoint, radius: number) =>
       Math.abs(point.x - anchor.x) + radius <= halfWidth &&
-      Math.abs(point.y - anchor.y) + radius <= halfHeight;
+      Math.abs(point.y - anchor.y) + radius <= halfHeight &&
+      area.obstacles.every((obstacle) => {
+        const x = centerX + (point.x - anchor.x) * fitZoom;
+        const y = centerY + (point.y - anchor.y) * fitZoom;
+        const nearestX = Math.max(obstacle.left, Math.min(x, obstacle.right));
+        const nearestY = Math.max(obstacle.top, Math.min(y, obstacle.bottom));
+        return Math.hypot(x - nearestX, y - nearestY) >= radius * fitZoom + 8;
+      });
     placed = { [code]: anchor };
     const clear = (point: MapPoint, radius: number) =>
       Object.entries(placed).every(
@@ -677,32 +687,24 @@ const fitNeighborhood = (
           radius + (other === code ? 72 : 57) + 16,
       );
     const candidates: MapPoint[] = [];
-    for (let row = -Math.ceil(halfHeight / 145); row <= Math.ceil(halfHeight / 145); row++) {
-      for (let col = -Math.ceil(halfWidth / 150); col <= Math.ceil(halfWidth / 150); col++) {
-        const seed = Math.sin(row * 73 + col * 39);
-        const point = {
-          x: anchor.x + col * 150 + (Math.abs(row) % 2) * 70 + seed * 7,
-          y: anchor.y + row * 145 + Math.cos(col * 41 + row) * 8,
-        };
+    for (let radius = 155; radius <= Math.hypot(halfWidth, halfHeight); radius += 75) {
+      for (let step = 0; step < 48; step++) {
+        const angle = (step / 48) * Math.PI * 2;
+        const irregularity = Math.sin(step * 7 + radius) * 6;
+        const point = { x: anchor.x + Math.cos(angle) * (radius + irregularity), y: anchor.y + Math.sin(angle) * (radius + irregularity) };
         if (fits(point, 57)) candidates.push(point);
       }
     }
-    // Retain every currently valid direct star before relocating obstructed ones.
-    for (const neighbor of direct) {
-      if (fits(previous[neighbor], 57) && clear(previous[neighbor], 57))
-        placed[neighbor] = previous[neighbor];
-    }
-    for (const neighbor of direct) {
-      if (placed[neighbor]) continue;
-      const old = previous[neighbor];
-      const originalAngle = Math.atan2(old.y - anchor.y, old.x - anchor.x);
+    for (const [index, neighbor] of direct.entries()) {
+      const targetAngle = index * Math.PI * (3 - Math.sqrt(5));
       const score = (point: MapPoint) => {
-        const angle = Math.atan2(point.y - anchor.y, point.x - anchor.x);
-        const difference = Math.atan2(
-          Math.sin(angle - originalAngle),
-          Math.cos(angle - originalAngle),
-        );
-        return Math.hypot(point.x - old.x, point.y - old.y) + Math.abs(difference) * 160;
+        const dx = point.x - anchor.x, dy = point.y - anchor.y;
+        const angle = Math.atan2(dy, dx);
+        const difference = Math.atan2(Math.sin(angle - targetAngle), Math.cos(angle - targetAngle));
+        const leftCount = Object.values(placed).filter((p) => p.x < anchor.x - 1).length;
+        const rightCount = Object.values(placed).filter((p) => p.x > anchor.x + 1).length;
+        const imbalance = dx < -10 ? leftCount - rightCount : dx > 10 ? rightCount - leftCount : 0;
+        return Math.hypot(dx, dy) + Math.abs(difference) * 35 + Math.max(0, imbalance) * 90;
       };
       const available = candidates
         .filter((point) => clear(point, 57))
@@ -716,7 +718,7 @@ const fitNeighborhood = (
     positions: { ...previous, ...placed },
     zoom: fitZoom,
     pan: {
-      x: initial.x - anchor.x + ((area.left + area.right) / 2 - area.width / 2) / fitZoom,
+      x: initial.x - anchor.x,
       y: initial.y - anchor.y + ((area.top + area.bottom) / 2 - area.height / 2) / fitZoom,
     },
   };
@@ -1143,12 +1145,13 @@ function App() {
       let left = 16,
         top = 16,
         bottom = bounds.height - 16;
+      const obstacles: MapArea["obstacles"] = [];
       stage
-        .parentElement!.querySelectorAll(".progress-card, .map-label, .map-controls, .legend")
+        .parentElement!.querySelectorAll(".progress-card, .global-course-search, .map-label, .map-controls, .legend")
         .forEach((element) => {
           const rect = element.getBoundingClientRect();
-          if (element.classList.contains("progress-card"))
-            left = Math.max(left, rect.right - bounds.left + 18);
+          if (element.classList.contains("progress-card") || element.classList.contains("global-course-search"))
+            obstacles.push({ left: rect.left - bounds.left, right: rect.right - bounds.left, top: rect.top - bounds.top, bottom: rect.bottom - bounds.top });
           else if (element.classList.contains("map-label"))
             top = Math.max(top, rect.bottom - bounds.top + 18);
           else bottom = Math.min(bottom, rect.top - bounds.top - 18);
@@ -1160,13 +1163,14 @@ function App() {
         bottom,
         width: bounds.width,
         height: bounds.height,
+        obstacles,
       };
       setMapArea((old) => (JSON.stringify(old) === JSON.stringify(next) ? old : next));
     };
     const observer = new ResizeObserver(measure);
     observer.observe(stage);
     stage
-      .parentElement!.querySelectorAll(".progress-card, .map-label, .map-controls, .legend")
+      .parentElement!.querySelectorAll(".progress-card, .global-course-search, .map-label, .map-controls, .legend")
       .forEach((panel) => observer.observe(panel));
     measure();
     return () => observer.disconnect();
