@@ -1469,6 +1469,13 @@
 .missing-course button:hover { background: #203a57; }
 .missing-course strong { color: #fff; margin-right: 5px; }
 .missing-course small { color: #fde68a; font-size: 11px; }
+.missing-course small.requirement-completed, .requirement-state.completed { color: #8ee6b4; }
+.missing-course small.requirement-planned { color: #fde68a; }
+.missing-course small.requirement-alternative { color: #d0cecc; }
+.requirement-state.with-plan { color: #d8b4fe; }
+.requirement-state.incomplete { color: #ffbf8a; }
+.planned-chain-note { display: block; color: #d0cecc; font-size: 11px; line-height: 1.35; }
+.additional-requirements, .requirement-summary { color: #d0cecc; font-size: 11px; line-height: 1.4; }
 .calendar-source {
   display: inline-block;
   margin: -2px 0 11px;

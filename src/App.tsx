@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { COURSE_LIST, COURSES, type Course } from "./data/courses";
 import { inferCompletedPrerequisites } from "./completedPrerequisites";
 import { simplifyPrerequisites, type PrerequisiteExpression } from "./prerequisiteSimplification.js";
+import { evaluatePrerequisites, evaluateWithPlan, hasUnresolvedChain, type PrerequisiteStatus } from "./prerequisiteEvaluation.js";
 
 const REQUIRED_COURSES = new Set([
   "CPSC 210",
@@ -400,7 +401,7 @@ function AppHeader({
         </div>
         <div>
           <div className="brand-name">CoursePath</div>
-          <div className="brand-subtitle">UBC Â· BSc Computer Science</div>
+          <div className="brand-subtitle">UBC Ã‚Â· BSc Computer Science</div>
         </div>
         </button>
         <nav className="view-tabs" aria-label="Workspace views">
@@ -430,11 +431,13 @@ function PlannedCourseList({
   onRemove,
   onSelect,
   eligibility,
+  completed,
 }: {
   planned: string[];
   onRemove: (code: string) => void;
   onSelect: (code: string) => void;
   eligibility: Record<string, PrerequisiteStatus>;
+  completed: string[];
 }) {
   return (
     <div className="course-list shared-planned-list">
@@ -447,11 +450,13 @@ function PlannedCourseList({
                 <button className="planned-course-code" onClick={() => onSelect(code)}><strong><CourseCode code={code} /></strong></button>
                 <span className={`planned-readiness ${eligibility[code].state}`}>
                   {eligibility[code].state === "satisfied" ? "Ready to take" : eligibility[code].state === "incomplete" ? "Missing prerequisites" : <>
-                    After {eligibility[code].plannedContributors.map((prerequisite, index) => <span key={prerequisite}>{index > 0 && ", "}{COURSES[prerequisite] ? <button onClick={() => onSelect(prerequisite)}>{prerequisite}</button> : prerequisite}</span>)}
+                    After <PlannedDependencies course={COURSES[code]} completed={completed} planned={planned} onSelect={onSelect} />
                   </>}
                 </span>
               </div>
               <small>{COURSES[code].title}</small>
+              {eligibility[code].review && <span className="planned-chain-note">Additional requirements apply</span>}
+              {eligibility[code].state === "with-plan" && hasUnresolvedChain(code, COURSES, completed, planned) && <span className="planned-chain-note">Prerequisite chain needs attention</span>}
             </div>
           </div>
           <button
@@ -486,74 +491,8 @@ const getDependents = (code: string) =>
 const highSchoolPattern =
   /(?:principles of mathematics|pre[- ]calculus|high school(?: calculus| biology)?|AP Calculus(?: AB| BC)?|(?:CALC|ENGL|CHEM|PHYS|BIOL|MATH)\s+(?:11|12)\b)/i;
 
-const evaluatePrerequisites = (course: Course, taken: ReadonlySet<string>) => {
-  const hasHighSchool = highSchoolPattern.test(course.prerequisiteText);
-  const text = course.prerequisiteText
-    .replace(/This course is not eligible[\s\S]*/i, "")
-    .replace(
-      /(?:Principles of Mathematics|Pre[- ]calculus|CALC|ENGL|CHEM|PHYS|BIOL|MATH)\s+(?:11|12)\b|AP Calculus(?: AB| BC)?|High School Biology/gi,
-      " HIGHSCHOOL ",
-    )
-    .replace(/High school calculus is strongly recommended\.?/gi, "")
-    .replace(/\b([A-Z]{2,5})_V\s+(\d{3})/g, "$1 $2")
-    // Okanagan courses remain distinct from Vancouver equivalents.
-    .replace(/\b([A-Z]{2,5})_O\s+(\d{3})/g, "$1_O $2");
-  const universityGradeRule =
-    /(?:score of|minimum grade|advanced credit|as a co-?requisite|credit exclusion|standing|permission|credits (?:of|from|beyond))/i.test(
-      text.replace(/[^.]*HIGHSCHOOL[^.]*(?:\.|$)/g, (part) =>
-        /[A-Z]{2,5}(?:_O)?\s+\d{3}/.test(part) ? part : "",
-      ),
-    );
-  const review =
-    (course.manualRequirement && !(hasHighSchool && !/[A-Z]{2,5}(?:_O)?\s+\d{3}/.test(text))) ||
-    universityGradeRule;
-  const evaluateText = (value: string): boolean => {
-    // Labelled alternative branches take precedence over conjunctions within each branch.
-    const alternatives = value.split(/\bor\s+\(?[a-d]\)/i);
-    if (alternatives.length > 1) return alternatives.some(evaluateText);
-    const conjunctions = value
-      .split(/\band\b|;/i)
-      .filter((part) => /HIGHSCHOOL|[A-Z]{2,5}(?:_O)?\s+\d{3}/.test(part));
-    if (conjunctions.length > 1) return conjunctions.every(evaluateText);
-    const codes = value.match(/[A-Z]{2,5}(?:_O)?\s+\d{3}/g) || [];
-    const options = [
-      ...codes.map((code) => taken.has(code)),
-      ...(value.includes("HIGHSCHOOL") ? [true] : []),
-    ];
-    if (!options.length) return !value.trim() || !course.prerequisiteText;
-    return /one of|either|\bor\b/i.test(value) ? options.some(Boolean) : options.every(Boolean);
-  };
-  const met = course.prerequisitePaths.length
-    ? course.prerequisitePaths.some((path) =>
-        path.every((code) => taken.has(code) || highSchoolPattern.test(code)),
-      )
-    : !course.prerequisiteText || evaluateText(text);
-  return { met: met && !review, review, hasHighSchool };
-};
-
-type PrerequisiteStatus = ReturnType<typeof evaluatePrerequisites> & {
-  state: "satisfied" | "with-plan" | "incomplete";
-  plannedContributors: string[];
-};
-const evaluateWithPlan = (course: Course, completed: readonly string[], planned: readonly string[]): PrerequisiteStatus => {
-  const taken = new Set(completed);
-  const current = evaluatePrerequisites(course, taken);
-  const combined = new Set([...completed, ...planned.filter((code) => code !== course.code)]);
-  const withPlan = evaluatePrerequisites(course, combined);
-  const state = current.met ? "satisfied" : withPlan.met ? "with-plan" : "incomplete";
-  const contributors = new Set(planned.filter((code) => !taken.has(code) && code !== course.code));
-  if (state === "with-plan") {
-    for (const code of contributors) {
-      const trial = new Set([...taken, ...contributors]);
-      trial.delete(code);
-      if (evaluatePrerequisites(course, trial).met) contributors.delete(code);
-    }
-  }
-  return { ...current, state, plannedContributors: state === "with-plan" ? [...contributors] : [] };
-};
-
 // Each path is a complete alternative; courses within a path are all required.
-const missingPrerequisitePaths = (course: Course, taken: ReadonlySet<string>) => {
+const missingPrerequisitePaths = (course: Course, _taken: ReadonlySet<string>) => {
   let paths = course.prerequisitePaths;
   if (!paths.length && course.prerequisiteText) {
     const text = course.prerequisiteText.split(/\.\s/)[0];
@@ -561,24 +500,34 @@ const missingPrerequisitePaths = (course: Course, taken: ReadonlySet<string>) =>
     if (/^one of\b/i.test(text) && !/\band\b|\bplus\b/i.test(text)) paths = codes.map((code) => [code]);
     else if ((/^all of\b/i.test(text) && !/\bor\b/i.test(text)) || (codes.length === 1 && !/\bor\b|\bone of\b/i.test(text))) paths = codes.length ? [codes] : [];
   }
-  if (!paths.length || paths.some((path) => path.every((code) => taken.has(code) || highSchoolPattern.test(code)))) return [];
-  return paths.map((path) => path.filter((code) => !taken.has(code) && !highSchoolPattern.test(code)));
+  return paths.map((path) => path.filter((code) => !highSchoolPattern.test(code)));
 };
 
-function PrerequisiteGroups({ expression, planned, onSelect }: { expression: PrerequisiteExpression; planned: string[]; onSelect: (code: string) => void }) {
+function PlannedDependencies({ course, completed, planned, onSelect }: { course: Course; completed: string[]; planned: string[]; onSelect: (code: string) => void }) {
+  const taken = new Set(completed);
+  const paths = missingPrerequisitePaths(course, taken).map((path) => path.filter((code) => !taken.has(code))).filter((path) => path.every((code) => planned.includes(code) && code !== course.code));
+  if (!paths.length) return <>{evaluateWithPlan(course, completed, planned).plannedContributors.map((code, i) => <span key={code}>{i > 0 && ", "}<button onClick={() => onSelect(code)}>{code}</button></span>)}</>;
+  const render = (node: PrerequisiteExpression): React.ReactNode => {
+    if (node.type === "true" || node.type === "false") return null;
+    if (node.type === "count") return <>{node.count < node.codes.length && (node.count === 1 ? "either " : `${node.count} of `)}{node.codes.map((code, i) => <span key={code}>{i > 0 && (i === node.codes.length - 1 ? (node.count === node.codes.length ? " and " : " or ") : ", ")}<button onClick={() => onSelect(code)}>{code}</button></span>)}</>;
+    return <>{node.children.map((child, i) => <span key={i}>{i > 0 && (node.type === "and" ? " and " : " or ")}{node.type === "or" && "("}{render(child)}{node.type === "or" && ")"}</span>)}</>;
+  };
+  return <>{render(simplifyPrerequisites(paths))}</>;
+}
+
+function PrerequisiteGroups({ expression, completed, planned, onSelect }: { expression: PrerequisiteExpression; completed: string[]; planned: string[]; onSelect: (code: string) => void }) {
   if (expression.type === "true" || expression.type === "false") return null;
   if (expression.type === "count") {
-    const plannedCount = Math.min(expression.count, expression.codes.filter((code) => planned.includes(code)).length);
-    const outstanding = expression.count - plannedCount;
-    const label = plannedCount
-      ? outstanding ? `Complete ${outstanding} more of the following (${plannedCount} planned)` : `Covered by plan (${plannedCount} planned)`
-      : expression.count === expression.codes.length ? "Complete all of the following" : `Complete ${expression.count} of the following`;
+    const completedCount = expression.codes.filter((code) => completed.includes(code)).length;
+    const plannedCount = expression.codes.filter((code) => !completed.includes(code) && planned.includes(code)).length;
+    const covered = completedCount >= expression.count ? "Completed" : completedCount + plannedCount >= expression.count ? "Covered by plan" : "Incomplete";
+    const label = expression.count === expression.codes.length ? "Complete all of the following" : `Complete ${expression.count} of the following`;
     return (
     <div className="missing-path">
-      <span className="missing-path-label">{label}</span>
+      <span className="missing-path-label">{label} <span className={`requirement-state ${covered === "Covered by plan" ? "with-plan" : covered.toLowerCase()}`}>· {covered}</span> ({Math.min(completedCount, expression.count)} completed, {Math.min(plannedCount, Math.max(0, expression.count - completedCount))} planned)</span>
       {expression.codes.map((code) => <div className="missing-course" key={code}>
         {COURSES[code] ? <button onClick={() => onSelect(code)}><strong><CourseCode code={code} /></strong><span>{COURSES[code].title}</span></button> : <span><strong>{code}</strong> Course details unavailable</span>}
-        {planned.includes(code) && <small>Planned</small>}
+        <small className={completed.includes(code) ? "requirement-completed" : planned.includes(code) ? "requirement-planned" : "requirement-alternative"}>{completed.includes(code) ? "✓ Completed" : planned.includes(code) ? "● Planned" : covered === "Incomplete" ? "Additional selection" : "Alternative"}</small>
       </div>)}
     </div>
   );
@@ -586,8 +535,20 @@ function PrerequisiteGroups({ expression, planned, onSelect }: { expression: Pre
   return <div>{expression.children.map((child, index) => <div className="missing-path" key={index}>
     {index > 0 && <span className="missing-path-label">{expression.type === "or" ? "OR" : "AND"}</span>}
     {expression.type === "or" && <span className="missing-path-label">Option {index + 1}</span>}
-    <PrerequisiteGroups expression={child} planned={planned} onSelect={onSelect} />
+    <PrerequisiteGroups expression={child} completed={completed} planned={planned} onSelect={onSelect} />
   </div>)}</div>;
+}
+
+function RequirementSummary({ expression, completed, planned }: { expression: PrerequisiteExpression; completed: string[]; planned: string[] }) {
+  const groups = expression.type === "count" ? [expression] : expression.type === "and" ? expression.children : [];
+  if (!groups.length || groups.some((group) => group.type !== "count")) return null;
+  const seen = new Set<string>();
+  for (const group of groups) {
+    if (group.type !== "count" || group.codes.some((code) => seen.has(code))) return null;
+    group.codes.forEach((code) => seen.add(code));
+  }
+  const covered = groups.filter((group) => group.type === "count" && group.codes.filter((code) => completed.includes(code) || planned.includes(code)).length >= group.count).length;
+  return <p className="requirement-summary">{covered} of {groups.length} course requirement groups covered</p>;
 }
 
 const WORLD = { width: 4800, height: 3600 };
@@ -923,7 +884,7 @@ function SearchCompare({
           <Icon name="search" />
           <input
             aria-label="Search all courses"
-            placeholder="Search codes, topics or interests â€” machine learning, security, graphicsâ€¦"
+            placeholder="Search codes, topics or interests Ã¢â‚¬â€ machine learning, security, graphicsÃ¢â‚¬Â¦"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -998,10 +959,12 @@ function SearchCompare({
                 ))}
               </div>
               {courseStatusText(course.code)}
-              {eligibility[course.code].state !== "satisfied" && missingPrerequisitePaths(course, new Set(completed)).length > 0 && (
+              {eligibility[course.code].review && <p className="sc-footnote">Additional requirements may apply; check the Academic Calendar.</p>}
+              {missingPrerequisitePaths(course, new Set(completed)).length > 0 && (
                 <section className="missing-prerequisites" aria-label="Prerequisite requirements">
                   <h4>Prerequisite requirements</h4>
-                  <PrerequisiteGroups expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} planned={planned} onSelect={onSelectCourse} />
+                  <RequirementSummary expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} completed={completed} planned={planned} />
+                  <PrerequisiteGroups expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} completed={completed} planned={planned} onSelect={onSelectCourse} />
                 </section>
               )}
             </article>
@@ -1016,7 +979,7 @@ function SearchCompare({
       <div className="sc-right">
         <section className="sc-panel sc-planned">
           <h2>Planned Courses</h2>
-          <PlannedCourseList planned={planned} onRemove={removePlan} onSelect={onSelectCourse} eligibility={eligibility} />
+          <PlannedCourseList planned={planned} completed={completed} onRemove={removePlan} onSelect={onSelectCourse} eligibility={eligibility} />
         </section>
         <section className="sc-panel sc-compare">
           <h2>Compare Courses</h2>
@@ -1101,7 +1064,7 @@ function SearchCompare({
                       <div className="sc-comparison-section">
                         <dt>Main topics</dt>
                         <dd>
-                          {topicsFor(course).join(" Â· ") ||
+                          {topicsFor(course).join(" Ã‚Â· ") ||
                             "No topic tags identified in catalog text"}
                         </dd>
                       </div>
@@ -1113,7 +1076,7 @@ function SearchCompare({
                         <dt>Prerequisites</dt>
                         <dd>
                           {missingPrerequisitePaths(course, new Set(completed)).length > 0 ? (
-                            <PrerequisiteGroups expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} planned={planned} onSelect={(target) => { setComparison(null); onSelectCourse(target); }} />
+                            <><RequirementSummary expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} completed={completed} planned={planned} /><PrerequisiteGroups expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} completed={completed} planned={planned} onSelect={(target) => { setComparison(null); onSelectCourse(target); }} /></>
                           ) : eligibility[code].state === "satisfied" ? "Prerequisites satisfied" : "Review the Academic Calendar requirements."}
                           {eligibility[code].hasHighSchool && (
                             <p className="sc-footnote">
@@ -1135,7 +1098,7 @@ function SearchCompare({
                       <div className="sc-comparison-section">
                         <dt>Degree requirements</dt>
                         <dd>
-                          {requirementLabels(course).join(" Â· ")}
+                          {requirementLabels(course).join(" Ã‚Â· ")}
                           <p className="sc-footnote">
                             Credit categories used by your progress report; subject to program
                             rules.
@@ -1150,7 +1113,7 @@ function SearchCompare({
                       </div>
                     </dl>
                     <a href={course.sourceUrl} target="_blank" rel="noreferrer">
-                      Academic Calendar source â†—
+                      Academic Calendar source Ã¢â€ â€”
                     </a>
                     {planButton(code)}
                   </article>
@@ -1737,8 +1700,8 @@ function App() {
 
         <div className="map-label">
           <span className="eyebrow">Solar map</span>
-          <h1>{center} Â· {COURSES[center].title}</h1>
-          <p>Drag to pan Â· Scroll to zoom Â· Select a star to explore</p>
+          <h1>{center} Ã‚Â· {COURSES[center].title}</h1>
+          <p>Drag to pan Ã‚Â· Scroll to zoom Ã‚Â· Select a star to explore</p>
         </div>
 
         <div className="map-toolbar">
@@ -1855,21 +1818,11 @@ function App() {
                 <strong>{currentDetails.corequisiteText}</strong>
               </div>
             )}
-            {missingPaths.length > 0 && detailEligibility?.state === "incomplete" && (
+            {missingPaths.length > 0 && (
               <section className="missing-prerequisites" aria-label="Missing prerequisites">
-                <h4>Missing prerequisites</h4>
-                <PrerequisiteGroups expression={missingExpression} planned={planned} onSelect={(code) => focusCourse(code, false)} />
-              </section>
-            )}
-            {satisfiedWithPlan && detailEligibility && (
-              <section className="missing-prerequisites" aria-label="Planned prerequisites">
-                <h4>Planned prerequisites</h4>
-                {detailEligibility.plannedContributors.map((code) => (
-                  <div className="missing-course" key={code}>
-                    {COURSES[code] ? <button onClick={() => focusCourse(code, false)}><strong><CourseCode code={code} /></strong><span>{COURSES[code].title}</span></button> : <span><strong>{code}</strong> Course details unavailable</span>}
-                    <small>Planned</small>
-                  </div>
-                ))}
+                <h4>Course prerequisites</h4>
+                <RequirementSummary expression={missingExpression} completed={completed} planned={planned} />
+                <PrerequisiteGroups expression={missingExpression} completed={completed} planned={planned} onSelect={(code) => focusCourse(code, false)} />
               </section>
             )}
             {missingPaths.length === 0 && detailEligibility?.state === "incomplete" && currentDetails.prerequisiteText && currentDetails.prerequisitePaths.length === 0 && (
@@ -1892,9 +1845,7 @@ function App() {
                 <strong>
                   {currentDetails.referenceOnly
                     ? "Reference only"
-                    : needsManualReview
-                      ? "Review additional requirements"
-                      : isEligible
+                    : isEligible
                         ? "Prerequisites satisfied"
                         : satisfiedWithPlan
                           ? "Prerequisites satisfied with plan"
@@ -1903,9 +1854,7 @@ function App() {
                 <small>
                   {currentDetails.referenceOnly
                     ? "No current Vancouver course listing"
-                    : needsManualReview
-                      ? "The Calendar includes standing, grade, or permission rules"
-                      : isEligible
+                    : isEligible
                         ? currentDetails.corequisiteText
                           ? corequisitesMet
                             ? "Prerequisites met; corequisites completed or planned."
@@ -1917,6 +1866,7 @@ function App() {
                 </small>
               </span>
             </div>
+            {needsManualReview && <p className="additional-requirements">Additional requirements may apply, such as grades, standing or permission. Check the Academic Calendar.</p>}
             <a
               className="calendar-source"
               href={currentDetails.sourceUrl}
@@ -2013,6 +1963,7 @@ function App() {
           </div>
           <PlannedCourseList
             planned={planned}
+            completed={completed}
             eligibility={eligibility}
             onSelect={(code) => focusCourse(code, false)}
             onRemove={(code) => setPlanned((items) => items.filter((item) => item !== code))}
