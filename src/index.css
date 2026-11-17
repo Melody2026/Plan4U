@@ -1683,6 +1683,16 @@
   white-space: nowrap;
   max-width: 220px;
 }
+.shared-planned-list .list-item { height: auto; min-height: 58px; flex: 0 0 auto; }
+.planned-course-content { min-width: 0; flex: 1; }
+.planned-course-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.planned-course-code { text-align: left; }
+.planned-course-code:hover, .planned-readiness button:hover { text-decoration: underline; }
+.planned-readiness { font-size: 11px; line-height: 1.35; font-weight: 400; }
+.planned-readiness.satisfied, .search-compare .planned-readiness.satisfied { color: #8ee6b4; }
+.planned-readiness.with-plan { color: #d8b4fe; }
+.planned-readiness.incomplete { color: #ffbf8a; }
+.planned-readiness button { color: inherit; font: inherit; cursor: pointer; }
 .remove-button {
   display: grid;
   place-items: center;
