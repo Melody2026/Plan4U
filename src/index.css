@@ -1457,6 +1457,18 @@
 .prereq-row .corequisite-label {
   margin-top: 8px;
 }
+.missing-prerequisites { margin-top: 12px; }
+.missing-prerequisites h4 { color: #fff; font-size: 12px; }
+.missing-prerequisites p, .missing-path-label { color: #d0cecc; font-size: 11px; line-height: 1.4; }
+.missing-prerequisites p { margin: 4px 0 6px; }
+.missing-path + .missing-path { margin-top: 8px; }
+.missing-path-label { display: block; margin-bottom: 3px; }
+.missing-course { display: flex; align-items: center; gap: 6px; }
+.missing-course button, .missing-course > span { flex: 1; min-width: 0; padding: 5px 6px; color: #e8e6e3; text-align: left; font-size: 12px; line-height: 1.4; }
+.missing-course button { border-radius: 6px; cursor: pointer; }
+.missing-course button:hover { background: #203a57; }
+.missing-course strong { color: #fff; margin-right: 5px; }
+.missing-course small { color: #fde68a; font-size: 11px; }
 .calendar-source {
   display: inline-block;
   margin: -2px 0 11px;

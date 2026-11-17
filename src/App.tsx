@@ -536,6 +536,19 @@ const evaluatePrerequisites = (course: Course, taken: ReadonlySet<string>) => {
   return { met: met && !review, review, hasHighSchool };
 };
 
+// Each path is a complete alternative; courses within a path are all required.
+const missingPrerequisitePaths = (course: Course, taken: ReadonlySet<string>) => {
+  let paths = course.prerequisitePaths;
+  if (!paths.length && course.prerequisiteText) {
+    const text = course.prerequisiteText.split(/\.\s/)[0];
+    const codes = [...text.matchAll(/\b([A-Z]{2,5})(?:_V)?\s+(\d{3})\b/g)].map((match) => `${match[1]} ${match[2]}`);
+    if (/^one of\b/i.test(text) && !/\band\b|\bplus\b/i.test(text)) paths = codes.map((code) => [code]);
+    else if ((/^all of\b/i.test(text) && !/\bor\b/i.test(text)) || (codes.length === 1 && !/\bor\b|\bone of\b/i.test(text))) paths = codes.length ? [codes] : [];
+  }
+  if (!paths.length || paths.some((path) => path.every((code) => taken.has(code) || highSchoolPattern.test(code)))) return [];
+  return paths.map((path) => path.filter((code) => !taken.has(code) && !highSchoolPattern.test(code)));
+};
+
 const WORLD = { width: 4800, height: 3600 };
 const DEFAULT_ZOOM = 0.9;
 const INITIAL_COMPLETED = ["CPSC 110", "MATH 100", "ENGL 110"];
@@ -1411,6 +1424,7 @@ function App() {
   }, [completed, planned]);
 
   const currentDetails = selected ? COURSES[selected] : null;
+  const missingPaths = currentDetails ? missingPrerequisitePaths(currentDetails, new Set(completed)) : [];
   const eligibility = useMemo(() => {
     const taken = new Set(completed);
     return Object.fromEntries(
@@ -1796,6 +1810,36 @@ function App() {
                 </>
               )}
             </div>
+            {missingPaths.length > 0 && (
+              <section className="missing-prerequisites" aria-label="Missing prerequisites">
+                <h4>Missing prerequisites</h4>
+                <p>{missingPaths.length > 1 ? "Complete all courses in one option:" : "Complete all of the following:"}</p>
+                {missingPaths.map((path, index) => (
+                  <div className="missing-path" key={`${index}-${path.join("-")}`}>
+                    {missingPaths.length > 1 && <span className="missing-path-label">{index > 0 ? "OR · " : ""}Option {index + 1}</span>}
+                    {path.map((code) => (
+                      <div className="missing-course" key={code}>
+                        {COURSES[code] ? (
+                          <button onClick={() => focusCourse(code)}>
+                            <strong><CourseCode code={code} /></strong>
+                            <span>{COURSES[code].title}</span>
+                          </button>
+                        ) : (
+                          <span><strong>{code}</strong> <span>Course details unavailable</span></span>
+                        )}
+                        {planned.includes(code) && <small>Planned</small>}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </section>
+            )}
+            {missingPaths.length === 0 && detailEligibility && !detailEligibility.met && currentDetails.prerequisiteText && currentDetails.prerequisitePaths.length === 0 && (
+              <section className="missing-prerequisites" aria-label="Missing prerequisites">
+                <h4>Missing prerequisites</h4>
+                <p>Review the prerequisite text above for requirements that could not be separated into course options.</p>
+              </section>
+            )}
             {detailEligibility?.hasHighSchool && (
               <p style={{ color: "#e8e6e3", fontSize: 13, lineHeight: 1.55 }}>
                 High school prerequisites are assumed satisfied. Please verify that you meet these
