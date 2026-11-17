@@ -2191,6 +2191,15 @@
 .sc-course.is-compared { background: #213a56; }
 .search-compare .sc-course-status-incomplete { color: #d6b9ff; }
 .search-compare .sc-course-status-with-plan { color: #d6b9ff; }
+.search-compare .sc-prerequisite-status { margin-top: 5px; font-size: 13px; line-height: 1.5; }
+.search-compare .sc-prerequisite-status.satisfied { color: #8ee6b4; }
+.search-compare .sc-prerequisite-status.with-plan { color: #d8b4fe; }
+.search-compare .sc-prerequisite-status.incomplete { color: #ffbf8a; }
+.sc-prerequisite-toggle { color: inherit; cursor: pointer; text-align: left; }
+.sc-prerequisite-toggle:hover, .sc-prerequisite-dependencies button:hover { text-decoration: underline; }
+.sc-prerequisite-dependencies { color: #d0cecc; font-size: 11px; }
+.sc-prerequisite-dependencies button { color: #d8b4fe; cursor: pointer; }
+.sc-prerequisite-details { margin-top: 6px; color: #e8e6e3; }
 .global-course-options button[aria-selected="true"], .global-course-options button:hover {
   background: #25466e;
 }

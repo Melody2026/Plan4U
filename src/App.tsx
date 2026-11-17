@@ -551,6 +551,30 @@ function RequirementSummary({ expression, completed, planned }: { expression: Pr
   return <p className="requirement-summary">{covered} of {groups.length} course requirement groups covered</p>;
 }
 
+function SearchPrerequisiteStatus({ course, evaluation, completed, planned, onSelect }: { course: Course; evaluation: PrerequisiteStatus; completed: string[]; planned: string[]; onSelect: (code: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !container.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [open]);
+  useEffect(() => { if (evaluation.state !== "incomplete") setOpen(false); }, [evaluation.state]);
+  const label = evaluation.state === "satisfied" ? "Prerequisites satisfied" : evaluation.state === "with-plan" ? "Satisfied with planned courses" : "Prerequisites not satisfied";
+  const paths = open ? missingPrerequisitePaths(course, new Set(completed)) : [];
+  const expression = paths.length ? simplifyPrerequisites(paths, new Set([...completed, ...planned])) : null;
+  return <div className={`sc-prerequisite-status ${evaluation.state}`} ref={container}>
+    {evaluation.state === "incomplete" ? <button className="sc-prerequisite-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{label}</button> : <span>{label}</span>}
+    {evaluation.state === "with-plan" && evaluation.plannedContributors.length > 0 && <div className="sc-prerequisite-dependencies">Depends on: {evaluation.plannedContributors.map((code, index) => <span key={code}>{index > 0 && ", "}{COURSES[code] ? <button onClick={() => onSelect(code)}>{code}</button> : code}</span>)}</div>}
+    {open && <div className="sc-prerequisite-details">
+      {expression && expression.type !== "true" ? <PrerequisiteGroups expression={expression} completed={completed} planned={planned} onSelect={onSelect} /> : <span>Review the Academic Calendar for prerequisite details.</span>}
+    </div>}
+  </div>;
+}
+
 const WORLD = { width: 4800, height: 3600 };
 const DEFAULT_ZOOM = 0.9;
 const INITIAL_COMPLETED = ["CPSC 110", "MATH 100", "ENGL 110"];
@@ -853,16 +877,6 @@ function SearchCompare({
   const resolveChoice = (value: string) =>
     COURSE_LIST.find((c) => c.code.toLowerCase() === value.trim().toLowerCase());
   const chosen = choices.map(resolveChoice);
-  const courseStatusText = (code: string) => {
-    const isTaken = completed.includes(code);
-    const isPlanned = planned.includes(code);
-    const state = eligibility[code].state;
-    const label = state === "satisfied" ? "Prerequisites satisfied" : state === "with-plan" ? "Prerequisites satisfied with plan" : "Prerequisites incomplete";
-    return <>
-      {(isTaken || isPlanned) && <p className="sc-course-status">{isTaken ? "Taken" : "Already Added"}</p>}
-      <p className={`sc-course-status${state === "with-plan" ? " sc-course-status-with-plan" : ""}`}>{label}</p>
-    </>;
-  };
   const planButton = (code: string) => (
     <button
       className="sc-plan"
@@ -958,15 +972,8 @@ function SearchCompare({
                   <span key={topic}>{topic}</span>
                 ))}
               </div>
-              {courseStatusText(course.code)}
+              <SearchPrerequisiteStatus course={course} evaluation={eligibility[course.code]} completed={completed} planned={planned} onSelect={onSelectCourse} />
               {eligibility[course.code].review && <p className="sc-footnote">Additional requirements may apply; check the Academic Calendar.</p>}
-              {missingPrerequisitePaths(course, new Set(completed)).length > 0 && (
-                <section className="missing-prerequisites" aria-label="Prerequisite requirements">
-                  <h4>Prerequisite requirements</h4>
-                  <RequirementSummary expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} completed={completed} planned={planned} />
-                  <PrerequisiteGroups expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} completed={completed} planned={planned} onSelect={onSelectCourse} />
-                </section>
-              )}
             </article>
           ))}
           {!results.length && (
@@ -1054,7 +1061,6 @@ function SearchCompare({
                     </h2>
                     <div className="sc-comparison-title">
                       <h3>{course.title}</h3>
-                      {courseStatusText(code)}
                     </div>
                     <dl>
                       <div className="sc-comparison-section">
@@ -1075,9 +1081,7 @@ function SearchCompare({
                       <div className="sc-comparison-section">
                         <dt>Prerequisites</dt>
                         <dd>
-                          {missingPrerequisitePaths(course, new Set(completed)).length > 0 ? (
-                            <><RequirementSummary expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} completed={completed} planned={planned} /><PrerequisiteGroups expression={simplifyPrerequisites(missingPrerequisitePaths(course, new Set(completed)))} completed={completed} planned={planned} onSelect={(target) => { setComparison(null); onSelectCourse(target); }} /></>
-                          ) : eligibility[code].state === "satisfied" ? "Prerequisites satisfied" : "Review the Academic Calendar requirements."}
+                          <SearchPrerequisiteStatus course={course} evaluation={eligibility[code]} completed={completed} planned={planned} onSelect={(target) => { setComparison(null); onSelectCourse(target); }} />
                           {eligibility[code].hasHighSchool && (
                             <p className="sc-footnote">
                               High school prerequisites are assumed satisfied. Verify that you meet
