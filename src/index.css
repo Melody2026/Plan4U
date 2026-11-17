@@ -2173,6 +2173,7 @@
 .sc-course.is-completed { border-color: #50b77c; }
 .sc-course.is-compared { background: #213a56; }
 .search-compare .sc-course-status-incomplete { color: #d6b9ff; }
+.search-compare .sc-course-status-with-plan { color: #d6b9ff; }
 .global-course-options button[aria-selected="true"], .global-course-options button:hover {
   background: #25466e;
 }

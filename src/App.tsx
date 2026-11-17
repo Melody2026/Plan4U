@@ -536,6 +536,27 @@ const evaluatePrerequisites = (course: Course, taken: ReadonlySet<string>) => {
   return { met: met && !review, review, hasHighSchool };
 };
 
+type PrerequisiteStatus = ReturnType<typeof evaluatePrerequisites> & {
+  state: "satisfied" | "with-plan" | "incomplete";
+  plannedContributors: string[];
+};
+const evaluateWithPlan = (course: Course, completed: readonly string[], planned: readonly string[]): PrerequisiteStatus => {
+  const taken = new Set(completed);
+  const current = evaluatePrerequisites(course, taken);
+  const combined = new Set([...completed, ...planned]);
+  const withPlan = evaluatePrerequisites(course, combined);
+  const state = current.met ? "satisfied" : withPlan.met ? "with-plan" : "incomplete";
+  const contributors = new Set(planned.filter((code) => !taken.has(code)));
+  if (state === "with-plan") {
+    for (const code of contributors) {
+      const trial = new Set([...taken, ...contributors]);
+      trial.delete(code);
+      if (evaluatePrerequisites(course, trial).met) contributors.delete(code);
+    }
+  }
+  return { ...current, state, plannedContributors: state === "with-plan" ? [...contributors] : [] };
+};
+
 // Each path is a complete alternative; courses within a path are all required.
 const missingPrerequisitePaths = (course: Course, taken: ReadonlySet<string>) => {
   let paths = course.prerequisitePaths;
@@ -826,7 +847,7 @@ function SearchCompare({
   completed: string[];
   addPlan: (code: string) => void;
   removePlan: (code: string) => void;
-  eligibility: Record<string, ReturnType<typeof evaluatePrerequisites>>;
+  eligibility: Record<string, PrerequisiteStatus>;
   status: (code: string) => string;
 }) {
   const [search, setSearch] = useState("");
@@ -879,19 +900,12 @@ function SearchCompare({
   const courseStatusText = (code: string) => {
     const isTaken = completed.includes(code);
     const isPlanned = planned.includes(code);
-    const incomplete = !isTaken && !isPlanned && !eligibility[code].met;
-    const label = isTaken
-      ? "Taken"
-      : isPlanned
-        ? "Already Added"
-        : incomplete
-          ? "Prerequisites incomplete"
-          : null;
-    return label ? (
-      <p className={`sc-course-status${incomplete ? " sc-course-status-incomplete" : ""}`}>
-        {label}
-      </p>
-    ) : null;
+    const state = eligibility[code].state;
+    const label = state === "satisfied" ? "Prerequisites satisfied" : state === "with-plan" ? "Prerequisites satisfied with plan" : "Prerequisites incomplete";
+    return <>
+      {(isTaken || isPlanned) && <p className="sc-course-status">{isTaken ? "Taken" : "Already Added"}</p>}
+      <p className={`sc-course-status${state === "with-plan" ? " sc-course-status-with-plan" : ""}`}>{label}</p>
+    </>;
   };
   const planButton = (code: string) => (
     <button
@@ -1455,20 +1469,20 @@ function App() {
   }, [completed, planned]);
 
   const currentDetails = selected ? COURSES[selected] : null;
-  const missingPaths = currentDetails ? missingPrerequisitePaths(currentDetails, new Set(completed)) : [];
+  const missingPaths = currentDetails ? missingPrerequisitePaths(currentDetails, new Set([...completed, ...planned])) : [];
   const originalPaths = currentDetails?.prerequisitePaths ?? [];
   const sharedOriginal = originalPaths[0]?.filter((code) => originalPaths.every((path) => path.includes(code))) ?? [];
-  const completedAlternative = originalPaths.some((path) => path.some((code) => completed.includes(code) && !sharedOriginal.includes(code)));
+  const completedAlternative = originalPaths.some((path) => path.some((code) => (completed.includes(code) || planned.includes(code)) && !sharedOriginal.includes(code)));
   const missingGroups = simplifyMissingPaths(missingPaths, completedAlternative);
   const eligibility = useMemo(() => {
-    const taken = new Set(completed);
     return Object.fromEntries(
-      COURSE_LIST.map((course) => [course.code, evaluatePrerequisites(course, taken)]),
+      COURSE_LIST.map((course) => [course.code, evaluateWithPlan(course, completed, planned)]),
     );
-  }, [completed]);
+  }, [completed, planned]);
   const detailEligibility = currentDetails ? eligibility[currentDetails.code] : null;
   const needsManualReview = Boolean(detailEligibility?.review);
-  const isEligible = Boolean(detailEligibility?.met);
+  const isEligible = detailEligibility?.state === "satisfied";
+  const satisfiedWithPlan = detailEligibility?.state === "with-plan";
   const corequisitesMet = currentDetails
     ? currentDetails.corequisiteGroups.length
       ? currentDetails.corequisiteGroups.every((group) =>
@@ -1489,12 +1503,12 @@ function App() {
       ? "completed"
       : planned.includes(code)
         ? "planned"
-        : eligibility[code]?.met
+        : eligibility[code]?.state !== "incomplete"
           ? "satisfied"
           : "available";
   const statusLabel = (code: string) =>
     status(code) === "satisfied"
-      ? "Prerequisites satisfied"
+      ? eligibility[code].state === "with-plan" ? "Prerequisites satisfied with plan" : "Prerequisites satisfied"
       : status(code) === "available"
         ? "Other"
         : status(code);
@@ -1762,7 +1776,7 @@ function App() {
           <div className="legend glass-panel">
             <span>
               <i className="satisfied" />
-              Prerequisites satisfied
+              Prerequisites satisfied (with plan)
             </span>
             <span>
               <i className="completed" />
@@ -1864,7 +1878,18 @@ function App() {
                 ))}
               </section>
             )}
-            {missingPaths.length === 0 && detailEligibility && !detailEligibility.met && currentDetails.prerequisiteText && currentDetails.prerequisitePaths.length === 0 && (
+            {satisfiedWithPlan && detailEligibility && (
+              <section className="missing-prerequisites" aria-label="Planned prerequisites">
+                <h4>Planned prerequisites</h4>
+                {detailEligibility.plannedContributors.map((code) => (
+                  <div className="missing-course" key={code}>
+                    {COURSES[code] ? <button onClick={() => focusCourse(code, false)}><strong><CourseCode code={code} /></strong><span>{COURSES[code].title}</span></button> : <span><strong>{code}</strong> Course details unavailable</span>}
+                    <small>Planned</small>
+                  </div>
+                ))}
+              </section>
+            )}
+            {missingPaths.length === 0 && detailEligibility?.state === "incomplete" && currentDetails.prerequisiteText && currentDetails.prerequisitePaths.length === 0 && (
               <section className="missing-prerequisites" aria-label="Missing prerequisites">
                 <h4>Missing prerequisites</h4>
                 <p>Review the Academic Calendar source for requirements that could not be separated into course options.</p>
@@ -1876,9 +1901,9 @@ function App() {
                 requirements.
               </p>
             )}
-            <div className={`eligibility ${isEligible ? "eligible" : ""}`}>
+            <div className={`eligibility ${isEligible || satisfiedWithPlan ? "eligible" : ""}`}>
               <span className="eligibility-icon">
-                <Icon name={isEligible ? "check" : "x"} size={15} />
+                <Icon name={isEligible || satisfiedWithPlan ? "check" : "x"} size={15} />
               </span>
               <span>
                 <strong>
@@ -1887,7 +1912,9 @@ function App() {
                     : needsManualReview
                       ? "Review additional requirements"
                       : isEligible
-                        ? "You’re eligible"
+                        ? "Prerequisites satisfied"
+                        : satisfiedWithPlan
+                          ? "Prerequisites satisfied with plan"
                         : "Prerequisites incomplete"}
                 </strong>
                 <small>
@@ -1901,7 +1928,9 @@ function App() {
                             ? "Prerequisites met; corequisites completed or planned."
                             : "Prerequisites met. Listed corequisites still need to be completed or planned."
                           : "A valid prerequisite pathway is complete"
-                        : missingPaths.length ? "Complete the missing prerequisite requirements" : "Review the Academic Calendar requirements"}
+                        : satisfiedWithPlan
+                          ? "Requires completion of the planned prerequisites listed above."
+                          : missingPaths.length ? "Complete the missing prerequisite requirements" : "Review the Academic Calendar requirements"}
                 </small>
               </span>
             </div>
