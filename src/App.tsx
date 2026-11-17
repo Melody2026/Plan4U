@@ -902,7 +902,7 @@ function SearchCompare({
         </div>
         <div className="sc-results">
           {results.map((course) => (
-            <article className="sc-course" key={course.code}>
+            <article className={`sc-course${planned.includes(course.code) ? " is-planned" : ""}${completed.includes(course.code) ? " is-completed" : ""}${chosen.some((choice) => choice?.code === course.code) ? " is-compared" : ""}`} key={course.code}>
               <div className="sc-course-heading">
                 <h2>
                   <CourseCode code={course.code} /> <span>{course.title}</span>
@@ -956,7 +956,7 @@ function SearchCompare({
         <section className="sc-panel sc-compare">
           <h2>Compare Courses</h2>
           {choices.map((value, index) => (
-            <label className="sc-choice" key={index}>
+            <label className={`sc-choice${chosen[index] ? " is-selected" : ""}`} key={index}>
               Course {index + 1}
               <input
                 list={`compare-options-${index}`}
@@ -1392,9 +1392,9 @@ function App() {
                 <div className="requirement-meta">
                   <span>{req.short}</span>
                   <span>
-                    <span style={{ color: "#f5f7fb" }}>{req.done}</span>
+                    <span style={{ color: "#ffffff" }}>{req.done}</span>
                     {req.plan > 0 && <span style={{ color: "#e9bd50" }}> +{req.plan}</span>}
-                    <span style={{ color: "#59687f" }}> / {req.target}</span>
+                    <span style={{ color: "#d0cecc" }}> / {req.target}</span>
                   </span>
                 </div>
                 <div
@@ -1504,8 +1504,8 @@ function App() {
                 const dx = b.x - a.x;
                 const dy = b.y - a.y;
                 const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-                const startR = layer(from) === 0 ? 53 : layer(from) === 1 ? 43 : 32;
-                const endR = layer(to) === 0 ? 62 : layer(to) === 1 ? 52 : 40;
+                const startR = layer(from) === 0 ? 61 : layer(from) === 1 ? 49 : 37;
+                const endR = layer(to) === 0 ? 71 : layer(to) === 1 ? 60 : 46;
                 return (
                   <line
                     style={{
@@ -1558,13 +1558,9 @@ function App() {
                   aria-label={`View ${code}, ${COURSES[code].title}, ${statusLabel(code)}`}
                 >
                   <span className="node-glow" />
-                  <span className="node-core">
-                    {layer(code) === 0 && <span className="center-dot" />}
-                  </span>
                   <strong>
                     <CourseCode code={code} />
                   </strong>
-                  {layer(code) < 2 && <small>{COURSES[code].title}</small>}
                 </button>
               );
             })}
@@ -1573,7 +1569,7 @@ function App() {
 
         <div className="map-label">
           <span className="eyebrow">Solar map</span>
-          <h1>{center}</h1>
+          <h1>{center} · {COURSES[center].title}</h1>
           <p>Drag to pan · Scroll to zoom · Select a star to explore</p>
         </div>
 
@@ -1720,7 +1716,7 @@ function App() {
               )}
             </div>
             {detailEligibility?.hasHighSchool && (
-              <p style={{ color: "#9aa9bd", fontSize: 13, lineHeight: 1.55 }}>
+              <p style={{ color: "#e8e6e3", fontSize: 13, lineHeight: 1.55 }}>
                 High school prerequisites are assumed satisfied. Please verify that you meet these
                 requirements.
               </p>

@@ -1205,6 +1205,11 @@
 .course-node.layer-2 strong {
   font-size: 9px;
 }
+.course-node,
+.course-node.layer-0,
+.course-node.layer-2 {
+  padding: 0;
+}
 .map-label {
   position: absolute;
   z-index: 10;
@@ -2033,4 +2038,127 @@
   color: #8393aa;
   font-size: 12px;
   line-height: 1.55;
+}
+
+/* Color hierarchy: bright content, warm supporting copy, and distinct controls. */
+.brand-name, .panel-heading h2, .degree-badge, .map-label h1,
+.sidebar-header h2, .section-title h3, .course-link strong,
+.detail-card h2, .detail-card h3, .course-fact > strong,
+.search-compare h1, .search-compare h2, .search-compare h3,
+.sc-course-heading h2 > span + span, .sc-comparison-grid h2,
+.sc-comparison-grid h3, .taken-dialog-heading h2,
+.taken-checklist-row strong, .global-course-options button {
+  color: #ffffff;
+}
+.brand-subtitle, .term-pill, .eyebrow, .panel-heading h2 small,
+.requirement-meta, .requirement-meta span:last-child, .progress-key,
+.map-label p, .legend, .detail-topline, .detail-card > p,
+.prereq-row span, .prereq-row strong, .eligibility small,
+.course-link small, .empty-state, .section-title > span,
+.search-compare p, .sc-results-bar, .sc-choice,
+.sc-course .sc-description, .search-compare .sc-course-status,
+.sc-course .sc-tags span, .sc-tags span, .search-compare .sc-footnote,
+.sc-empty, .sc-comparison-grid dt, .sc-comparison-grid dd,
+.course-fact > span, .global-course-options small, .global-course-options p,
+.taken-heading-actions, .taken-checklist h3, .taken-checklist-row > span,
+.taken-alternatives, .taken-no-results, .taken-actions > span {
+  color: #e8e6e3;
+}
+.course-node strong { color: #ffffff; }
+.course-node strong { color: #cce2fe; font-weight: 500; font-size: 16.8px; }
+.course-node.layer-0 strong { font-size: 20.4px; }
+.course-node.layer-2 strong { font-size: 12px; letter-spacing: -0.03em; }
+.course-node.completed strong { color: #b9f5d9; }
+.course-node.planned strong { color: #fdeaA1; }
+.course-node.satisfied strong { color: #edddff; }
+.course-node {
+  width: 110px;
+  height: 110px;
+  border-color: rgba(120, 179, 255, 0.55);
+  background: radial-gradient(circle at 50% 38%, rgba(62, 113, 181, 0.3), rgba(12, 23, 39, 0.9) 68%);
+  box-shadow: inset 0 0 22px rgba(73, 137, 225, 0.12), 0 0 22px rgba(65, 139, 237, 0.24);
+}
+.course-node.layer-0 { width: 143px; height: 143px; }
+.course-node.layer-2 { width: 67px; height: 67px; min-height: 67px; }
+.course-node.completed {
+  border-color: rgba(112, 236, 163, 0.58);
+  background: radial-gradient(circle at 50% 38%, rgba(52, 139, 91, 0.27), rgba(12, 27, 27, 0.9) 68%);
+  box-shadow: inset 0 0 22px rgba(80, 214, 139, 0.12), 0 0 22px rgba(80, 214, 139, 0.24);
+}
+.course-node.planned {
+  border-color: rgba(255, 215, 111, 0.58);
+  background: radial-gradient(circle at 50% 38%, rgba(157, 121, 43, 0.27), rgba(29, 25, 17, 0.9) 68%);
+  box-shadow: inset 0 0 22px rgba(232, 189, 80, 0.12), 0 0 22px rgba(232, 189, 80, 0.24);
+}
+.course-node.satisfied {
+  border-color: #eee0ff;
+  background: radial-gradient(circle at 50% 38%, rgba(233, 213, 255, 0.34), rgba(27, 23, 44, 0.9) 68%);
+  box-shadow: inset 0 0 22px rgba(192, 132, 252, 0.14), 0 0 22px rgba(192, 132, 252, 0.26);
+}
+.course-node small, .course-node.satisfied small,
+.course-node.layer-0 small { color: #e8e6e3; }
+.global-course-search, .sc-search-input, .taken-filter, .sc-choice input {
+  color: #ffffff;
+  background: #17273a;
+  border-color: #70849b;
+}
+.global-course-search input, .sc-search-input input,
+.taken-filter, .sc-choice input { color: #ffffff; }
+.global-course-search input::placeholder, .sc-search-input input::placeholder,
+.taken-filter::placeholder, .sc-choice input::placeholder {
+  color: #ffffff;
+  opacity: 1;
+}
+.global-course-search:focus-within, .sc-search-input:focus-within,
+.taken-filter:focus, .sc-choice input:focus { border-color: #b9d8ff; }
+.view-tabs button, .map-controls button, .map-controls b,
+.close-button, .sidebar-header > button, .remove-button {
+  color: #e8e6e3;
+}
+.view-tabs button[aria-current] { color: #ffffff; background: #25466e; }
+.view-tabs button:hover, .map-controls button:hover,
+.close-button:hover, .sidebar-header > button:hover { color: #fff; background: #263d58; }
+.sc-panel { background: #101a29; border-color: #29394e; }
+.sc-course, .sc-comparison-grid article { background: #172538; border-color: #34465c; }
+.course-fact, .prereq-row { background: #101d2d; border-color: #304157; }
+.sc-tags span { background: #253347; }
+.sc-filters button { color: #e8e6e3; background: #18283b; border-color: #667a91; }
+.sc-filters button[aria-pressed="true"] { color: #fff; background: #285483; border-color: #a4cfff; }
+.sc-results-bar select, .taken-levels button, .taken-alternatives button {
+  color: #ffffff; background: #1a2a3e; border-color: #70849b;
+}
+.sc-plan, .sc-compare-button, .taken-save {
+  color: #fff; background: #285fae; border-color: #8bbcff;
+}
+.sc-plan:disabled, .plan-button:disabled { color: #e8e6e3; background: #26364a; border-color: #53677e; }
+.sc-choice:focus-within input { background: #203a57; }
+.sc-choice.is-selected input { background: #203a57; border-color: #a4cfff; }
+.sc-course.is-planned { border-color: #c9a64f; }
+.sc-course.is-completed { border-color: #50b77c; }
+.sc-course.is-compared { background: #213a56; }
+.search-compare .sc-course-status-incomplete { color: #d6b9ff; }
+.global-course-options button[aria-selected="true"], .global-course-options button:hover {
+  background: #25466e;
+}
+.sc-description-toggle, .calendar-source, .sc-comparison-grid a { color: #b5d6ff; }
+
+/* Midnight surfaces and quieter tertiary labels. */
+.app-shell, .search-view-content { background: #070b14; }
+.map-workspace {
+  background:
+    radial-gradient(circle at 55% 50%, rgba(40, 82, 141, 0.14), transparent 34%),
+    radial-gradient(circle at 15% 85%, rgba(67, 43, 121, 0.09), transparent 30%),
+    linear-gradient(145deg, #080c16 0%, #090e19 52%, #070b14 100%);
+}
+.topbar { background: #080c16; }
+.sidebar, .sc-panel, .sc-dialog, .taken-dialog { background: #0d1522; }
+.glass-panel { background: rgba(13, 21, 34, 0.94); }
+.sc-course, .sc-comparison-grid article { background: #142032; }
+.course-fact, .prereq-row, .global-course-options { background: #101a29; }
+.brand-subtitle, .term-pill, .eyebrow, .panel-heading h2 small,
+.progress-key, .detail-topline, .section-title > span,
+.sc-results-bar, .sc-tags span, .sc-course .sc-tags span,
+.search-compare .sc-footnote, .sc-comparison-grid dt,
+.course-fact > span, .taken-heading-actions, .taken-actions > span {
+  color: #d0cecc;
 }
