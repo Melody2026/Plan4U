@@ -1,4 +1,28 @@
-export type Course = {
+import courseStatistics from "./course-statistics.json";
+
+export type Professor = {
+  name: string;
+  rating: number | null;
+  difficulty: number | null;
+  numberOfRatings: number | null;
+  rateMyProfessorUrl: string;
+  lastTaught: string | null;
+  averageGrade: number | null;
+  teachingSessions?: string[];
+};
+
+export type CourseStatistics = {
+  averageGrade?: number | null;
+  averageGradeSource?: string;
+  averageGradePeriod?: string;
+  gradeSampleSize?: number | null;
+  professors?: Professor[];
+  statisticsUpdatedAt?: string;
+  statisticsSources?: string[];
+  availableSessions?: string[];
+};
+
+export type Course = CourseStatistics & {
   code: string;
   title: string;
   description: string;
@@ -2493,7 +2517,11 @@ const catalog: Course[] = [
   },
 ];
 
+const statistics: Record<string, CourseStatistics> = courseStatistics;
+export const COURSE_LIST: Course[] = catalog.map((course) => ({
+  ...course,
+  ...(!course.referenceOnly ? statistics[course.code] : {}),
+}));
 export const COURSES: Record<string, Course> = Object.fromEntries(
-  catalog.map((course) => [course.code, course]),
+  COURSE_LIST.map((course) => [course.code, course]),
 );
-export const COURSE_LIST = catalog;

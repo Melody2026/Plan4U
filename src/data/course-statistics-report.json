@@ -1,0 +1,70 @@
+{
+  "updatedAt": "2026-11-17T04:41:38.051Z",
+  "period": {
+    "sessions": [
+      "2022W",
+      "2023S",
+      "2023W",
+      "2024S",
+      "2024W",
+      "2025S"
+    ],
+    "label": "2022–2025 academic years (September–August)"
+  },
+  "catalogCount": 117,
+  "requested": 112,
+  "enriched": 93,
+  "withAverages": 93,
+  "withInstructors": 92,
+  "missingAverages": [
+    "CPSC 298",
+    "CPSC 299",
+    "CPSC 337",
+    "CPSC 349",
+    "CPSC 398",
+    "CPSC 399",
+    "CPSC 415",
+    "CPSC 423",
+    "CPSC 436",
+    "CPSC 448",
+    "CPSC 490",
+    "CPSC 499",
+    "AI 240",
+    "AI 322",
+    "DSCI 221",
+    "MATH 103",
+    "MATH 105",
+    "MATH 111",
+    "MATH 131"
+  ],
+  "missingInstructors": [
+    "CPSC 298",
+    "CPSC 299",
+    "CPSC 337",
+    "CPSC 349",
+    "CPSC 398",
+    "CPSC 399",
+    "CPSC 415",
+    "CPSC 423",
+    "CPSC 436",
+    "CPSC 448",
+    "CPSC 449",
+    "CPSC 490",
+    "CPSC 499",
+    "AI 240",
+    "AI 322",
+    "DSCI 221",
+    "MATH 103",
+    "MATH 105",
+    "MATH 111",
+    "MATH 131"
+  ],
+  "skippedReferenceOnly": [
+    "COMM 291",
+    "CPSC 261",
+    "KIN 371",
+    "PSYC 366",
+    "STAT 241"
+  ],
+  "warnings": []
+}

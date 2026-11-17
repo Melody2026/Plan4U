@@ -1,6 +1,112 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { COURSE_LIST, COURSES, type Course } from "./data/courses";
+
+const REQUIRED_COURSES = new Set([
+  "CPSC 210",
+  "CPSC 213",
+  "CPSC 221",
+  "CPSC 310",
+  "CPSC 313",
+  "CPSC 320",
+]);
+
+const RequiredStar = () => (
+  <span
+    title="Required for graduation"
+    aria-label="Required for graduation"
+    style={{ color: "#e9bd50", fontSize: "0.7em", lineHeight: 1, flexShrink: 0 }}
+  >
+    ★
+  </span>
+);
+
+const CourseCode = ({ code }: { code: string }) => (
+  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" }}>
+    {code}
+    {REQUIRED_COURSES.has(code) && <RequiredStar />}
+  </span>
+);
+
+const gradeLabel = (value: number | null | undefined) =>
+  value == null ? "Not available" : `${value.toFixed(1)}%`;
+const ratingLabel = (value: number | null | undefined) =>
+  value == null ? "Not available" : `${value.toFixed(1)} / 5`;
+
+function HistoricalStatistics({ course }: { course: Course }) {
+  const professors = course.professors ?? [];
+  return (
+    <section
+      className="historical-statistics"
+      aria-label={`Historical statistics for ${course.code}`}
+    >
+      <div className="historical-heading">
+        Historical average <strong>{gradeLabel(course.averageGrade)}</strong>
+      </div>
+      <p>
+        {course.averageGradePeriod ?? "Period: Not available"}
+        {course.gradeSampleSize != null &&
+          ` · ${course.gradeSampleSize.toLocaleString()} graded registrations`}
+      </p>
+      <p>
+        Historical instructors:{" "}
+        {professors.length
+          ? professors
+              .slice(0, 2)
+              .map((p) => p.name)
+              .join(", ") + (professors.length > 2 ? ` +${professors.length - 2} more` : "")
+          : "Not available"}
+      </p>
+      <details>
+        <summary>Instructors &amp; sources</summary>
+        <p>Available sessions: {course.availableSessions?.join(", ") || "Not available"}</p>
+        <p>
+          Past teaching records, excluding teaching assistants; future instructors may differ. Names
+          do not imply academic rank. Instructor averages describe their sections, including
+          co-taught sections, within the same period.
+        </p>
+        {professors.map((professor) => (
+          <div className="historical-professor" key={professor.name}>
+            <strong>{professor.name}</strong>
+            <p>Last taught in this period: {professor.lastTaught ?? "Not available"}</p>
+            <p>Sessions: {professor.teachingSessions?.join(", ") || "Not available"}</p>
+            <p>Section average: {gradeLabel(professor.averageGrade)}</p>
+            <p>
+              Rating: {ratingLabel(professor.rating)} · Difficulty:{" "}
+              {ratingLabel(professor.difficulty)} · Reviews:{" "}
+              {professor.numberOfRatings ?? "Not available"}
+            </p>
+            <a href={professor.rateMyProfessorUrl} target="_blank" rel="noreferrer">
+              Find on Rate My Professors ↗
+            </a>
+          </div>
+        ))}
+        {!professors.length && <p>Instructor information and ratings: Not available</p>}
+        <p>
+          Numerical ratings are not imported without an authorized source. Search links are not
+          verified profiles.
+        </p>
+        {course.averageGradeSource && (
+          <a href={course.averageGradeSource} target="_blank" rel="noreferrer">
+            UBCGrades course profile (all-time statistics) ↗
+          </a>
+        )}
+        <div className="historical-sources">
+          {course.statisticsSources?.map((source) => (
+            <a key={source} href={source} target="_blank" rel="noreferrer">
+              {source.split("/").at(-3)} session data ↗
+            </a>
+          ))}
+        </div>
+        <p>
+          Average weighted by reported graded registrations, counting each session once. Missing
+          sections may limit coverage; no values are inferred.
+        </p>
+        <p>Updated: {course.statisticsUpdatedAt?.slice(0, 10) ?? "Not available"}</p>
+      </details>
+    </section>
+  );
+}
 
 const Icon = ({
   name,
@@ -119,7 +225,7 @@ const evaluatePrerequisites = (course: Course, taken: ReadonlySet<string>) => {
 };
 
 const WORLD = { width: 4800, height: 3600 };
-const DEFAULT_ZOOM = 0.75;
+const DEFAULT_ZOOM = 0.9;
 const INITIAL_COMPLETED = ["CPSC 110", "MATH 100", "ENGL 110"];
 const INITIAL_PLANNED = ["CPSC 210", "MATH 101"];
 const INITIAL_NEXT_STEPS = new Set(
@@ -248,9 +354,11 @@ const fitNeighborhood = (
   );
   const anchor = previous[code];
   const initial = COURSE_POSITIONS["CPSC 110"];
-  let fitZoom = requestedZoom;
+  let fitZoom = Math.min(requestedZoom, DEFAULT_ZOOM);
   let placed: Record<string, MapPoint> = {};
-  for (let attempt = 0; attempt < 40; attempt++) {
+  // Prefer the larger view, reducing it in small steps only when direct nodes
+  // cannot fit with their existing label clearance inside the unobstructed area.
+  for (let attempt = 0; attempt < 80; attempt++) {
     const halfWidth = (area.right - area.left) / fitZoom / 2;
     const halfHeight = (area.bottom - area.top) / fitZoom / 2;
     const fits = (point: MapPoint, radius: number) =>
@@ -297,7 +405,7 @@ const fitNeighborhood = (
       if (available[0]) placed[neighbor] = available[0];
     }
     if (fits(anchor, 72) && direct.every((neighbor) => placed[neighbor])) break;
-    fitZoom *= 0.9;
+    fitZoom *= 0.95;
   }
   return {
     positions: { ...previous, ...placed },
@@ -309,7 +417,413 @@ const fitNeighborhood = (
   };
 };
 
+const TOPIC_PATTERNS: [string, RegExp][] = [
+  ["AI & machine learning", /machine learning|artificial intelligence|neural|deep learning/i],
+  ["Security", /security|cryptograph|privacy/i],
+  ["Graphics", /graphics|rendering|animation|visual computing/i],
+  ["Data & databases", /database|data analysis|data science|data mining/i],
+  ["Software engineering", /software|testing|debugging/i],
+  ["Algorithms", /algorithm|complexity|data structures/i],
+  ["Systems & networks", /operating system|network|distributed|computer architecture/i],
+  ["Human-computer interaction", /human.computer|user interface|interaction design/i],
+  ["Mathematics", /calculus|algebra|mathematical|probability|statistics/i],
+];
+const topicsFor = (course: Course) =>
+  TOPIC_PATTERNS.filter(([, pattern]) => pattern.test(`${course.title} ${course.description}`)).map(
+    ([label]) => label,
+  );
+const searchText = (course: Course) =>
+  `${course.code} ${course.title} ${course.description} ${topicsFor(course).join(" ")}`.toLowerCase();
+const interestTerms = (value: string) =>
+  value
+    .toLowerCase()
+    .trim()
+    .split(/[\s,]+/)
+    .filter(Boolean);
+const requirementLabels = (course: Course) => [
+  "Overall credits",
+  course.category === "Major" ? "Major credits" : `${course.category} credits`,
+  ...(course.level >= 300 ? ["Upper-level credits"] : []),
+  ...(REQUIRED_COURSES.has(course.code) ? ["Core requirement"] : []),
+];
+const SEARCH_FILTERS = [
+  "All Courses",
+  "CPSC 100-level",
+  "CPSC 200-level",
+  "CPSC 300-level",
+  "CPSC 400-level",
+  "Core Requirements",
+  "Major Requirements",
+  "Science Requirements",
+  "Electives",
+  "Upper-level",
+];
+
+function SearchCompare({
+  planned,
+  completed,
+  addPlan,
+  removePlan,
+  eligibility,
+  status,
+}: {
+  planned: string[];
+  completed: string[];
+  addPlan: (code: string) => void;
+  removePlan: (code: string) => void;
+  eligibility: Record<string, ReturnType<typeof evaluatePrerequisites>>;
+  status: (code: string) => string;
+}) {
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<string[]>([]);
+  const [sort, setSort] = useState("relevance");
+  const [choices, setChoices] = useState<[string, string]>(["", ""]);
+  const [comparison, setComparison] = useState<[string, string] | null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const terms = interestTerms(search);
+  const matchesFilter = (course: Course, filter: string) => {
+    if (filter.startsWith("CPSC "))
+      return course.code.startsWith("CPSC ") && course.level === Number(filter.slice(5, 8));
+    if (filter === "Core Requirements") return REQUIRED_COURSES.has(course.code);
+    if (filter === "Major Requirements") return course.category === "Major";
+    if (filter === "Science Requirements") return course.category === "Science";
+    if (filter === "Electives") return course.category === "Elective";
+    return course.level >= 300;
+  };
+  const results = COURSE_LIST.filter(
+    (course) =>
+      terms.every((term) => searchText(course).includes(term)) &&
+      (!filters.length || filters.some((filter) => matchesFilter(course, filter))),
+  ).sort((a, b) => {
+    if (sort === "title") return a.title.localeCompare(b.title);
+    if (sort === "credits") return a.credits - b.credits || a.code.localeCompare(b.code);
+    if (sort === "relevance" && search.trim()) {
+      const score = (c: Course) =>
+        terms.reduce(
+          (n, term) =>
+            n +
+            (c.code.toLowerCase().includes(term)
+              ? 4
+              : c.title.toLowerCase().includes(term)
+                ? 2
+                : 1),
+          0,
+        );
+      return score(b) - score(a) || a.code.localeCompare(b.code);
+    }
+    return a.code.localeCompare(b.code, undefined, { numeric: true });
+  });
+  useEffect(() => {
+    if (comparison) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [comparison]);
+  const resolveChoice = (value: string) =>
+    COURSE_LIST.find((c) => c.code.toLowerCase() === value.trim().toLowerCase());
+  const chosen = choices.map(resolveChoice);
+  const eligibilityText = (code: string) => {
+    const c = COURSES[code];
+    const rule = eligibility[code];
+    return completed.includes(code)
+      ? "Completed"
+      : c.referenceOnly
+        ? "Reference only — no current Vancouver listing"
+        : rule.review
+          ? "Review additional requirements"
+          : rule.met
+            ? "Prerequisites satisfied"
+            : "Prerequisites incomplete";
+  };
+  const planButton = (code: string) => (
+    <button
+      className={`sc-plan ${status(code)}`}
+      disabled={completed.includes(code) || planned.includes(code) || COURSES[code].referenceOnly}
+      onClick={() => addPlan(code)}
+    >
+      {completed.includes(code)
+        ? "Completed"
+        : planned.includes(code)
+          ? "Planned"
+          : COURSES[code].referenceOnly
+            ? "Reference only"
+            : "+ Add to Plan"}
+    </button>
+  );
+  return (
+    <div className="search-compare">
+      <section className="sc-panel sc-search" aria-label="Search courses">
+        <div>
+          <span className="eyebrow">Course catalog</span>
+          <h1>Search Courses</h1>
+          <p>Find courses by keyword, interest, or degree requirement.</p>
+        </div>
+        <label className="sc-search-input">
+          <Icon name="search" />
+          <input
+            aria-label="Search all courses"
+            placeholder="Search codes, topics or interests — machine learning, security, graphics…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+        <div className="sc-filters" aria-label="Degree requirement filters">
+          {SEARCH_FILTERS.map((filter) => (
+            <button
+              key={filter}
+              aria-pressed={filter === "All Courses" ? !filters.length : filters.includes(filter)}
+              onClick={() =>
+                setFilters((old) =>
+                  filter === "All Courses"
+                    ? []
+                    : old.includes(filter)
+                      ? old.filter((f) => f !== filter)
+                      : [...old, filter],
+                )
+              }
+            >
+              {filter}
+            </button>
+          ))}
+        </div>
+        <div className="sc-results-bar">
+          <span role="status">{results.length} courses found</span>
+          <label>
+            Sort by{" "}
+            <select value={sort} onChange={(e) => setSort(e.target.value)}>
+              <option value="relevance">Relevance</option>
+              <option value="code">Course code</option>
+              <option value="title">Title</option>
+              <option value="credits">Credits</option>
+            </select>
+          </label>
+        </div>
+        <div className="sc-results">
+          {results.map((course) => (
+            <article className="sc-course" key={course.code}>
+              <div className="sc-course-heading">
+                <h2>
+                  <CourseCode code={course.code} /> <span>{course.title}</span>
+                </h2>
+                {planButton(course.code)}
+              </div>
+              <p className="sc-description">{course.description}</p>
+              <HistoricalStatistics course={course} />
+              <div className="sc-tags">
+                <span>{course.creditsLabel} credits</span>
+                <span>{course.level}-level</span>
+                {topicsFor(course).map((topic) => (
+                  <span key={topic}>{topic}</span>
+                ))}
+              </div>
+              <div className={`sc-status ${status(course.code)}`}>
+                {eligibilityText(course.code)}
+                {eligibility[course.code].hasHighSchool &&
+                  " · High school prerequisites assumed satisfied"}
+                {course.corequisiteText && " · Check listed corequisites"}
+              </div>
+            </article>
+          ))}
+          {!results.length && (
+            <div className="sc-empty">
+              No courses match these keywords and filters. Try a broader search or All Courses.
+            </div>
+          )}
+        </div>
+      </section>
+      <div className="sc-right">
+        <section className="sc-panel sc-planned">
+          <div>
+            <span className="eyebrow">My workspace</span>
+            <h2>
+              Planned Courses <span className="sc-count">{planned.length}</span>
+            </h2>
+            <p>Your shared plan, across both views.</p>
+          </div>
+          <div className="sc-planned-list">
+            {planned.map((code) => (
+              <div className="sc-planned-course" key={code}>
+                <i className="status-dot planned" />
+                <div>
+                  <strong>
+                    <CourseCode code={code} />
+                  </strong>
+                  <p>{COURSES[code].title}</p>
+                </div>
+                <button
+                  className="sc-remove"
+                  aria-label={`Remove ${code} from plan`}
+                  onClick={() => removePlan(code)}
+                >
+                  <Icon name="x" size={15} />
+                </button>
+              </div>
+            ))}
+            {!planned.length && (
+              <p className="sc-empty">Your plan is empty. Add a course from the catalog.</p>
+            )}
+          </div>
+          <p className="sc-footnote">
+            {planned.reduce((total, code) => total + COURSES[code].credits, 0)} planned credits ·
+            Degree progress updates automatically
+          </p>
+        </section>
+        <section className="sc-panel sc-compare">
+          <span className="eyebrow">Explore your options</span>
+          <h2>Compare Courses</h2>
+          <p>See course details side by side.</p>
+          {choices.map((value, index) => (
+            <label className="sc-choice" key={index}>
+              Course {index + 1}
+              <input
+                list={`compare-options-${index}`}
+                value={value}
+                placeholder="Search course code or title"
+                onChange={(e) =>
+                  setChoices((old) =>
+                    index === 0 ? [e.target.value, old[1]] : [old[0], e.target.value],
+                  )
+                }
+              />
+              <datalist id={`compare-options-${index}`}>
+                {COURSE_LIST.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.title}
+                  </option>
+                ))}
+              </datalist>
+            </label>
+          ))}
+          <button
+            className="sc-compare-button"
+            disabled={!chosen[0] || !chosen[1] || chosen[0].code === chosen[1].code}
+            onClick={() =>
+              chosen[0] && chosen[1] && setComparison([chosen[0].code, chosen[1].code])
+            }
+          >
+            Compare
+          </button>
+          <p className="sc-footnote">
+            Select two different courses. Search interests carry into the comparison.
+          </p>
+        </section>
+      </div>
+      <dialog
+        ref={dialog}
+        className="sc-dialog"
+        onClose={() => setComparison(null)}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            const r = event.currentTarget.getBoundingClientRect();
+            if (
+              event.clientX < r.left ||
+              event.clientX > r.right ||
+              event.clientY < r.top ||
+              event.clientY > r.bottom
+            )
+              setComparison(null);
+          }
+        }}
+      >
+        {comparison && (
+          <>
+            <div className="sc-dialog-heading">
+              <div>
+                <span className="eyebrow">Side by side</span>
+                <h1>Course comparison</h1>
+              </div>
+              <button aria-label="Close comparison" onClick={() => setComparison(null)}>
+                <Icon name="x" />
+              </button>
+            </div>
+            <div className="sc-comparison-grid">
+              {comparison.map((code) => {
+                const course = COURSES[code];
+                const matched = terms.filter((term) => searchText(course).includes(term));
+                return (
+                  <article key={code}>
+                    <h2>
+                      <CourseCode code={code} />
+                    </h2>
+                    <h3>{course.title}</h3>
+                    <div className={`sc-status ${status(code)}`}>{eligibilityText(code)}</div>
+                    <dl>
+                      <dt>Description</dt>
+                      <dd>{course.description}</dd>
+                      <dt>Main topics</dt>
+                      <dd>
+                        {topicsFor(course).join(" · ") ||
+                          "No topic tags identified in catalog text"}
+                      </dd>
+                      <dt>Credits</dt>
+                      <dd>{course.creditsLabel}</dd>
+                      <dt>Prerequisites</dt>
+                      <dd>{course.prerequisiteText || "None listed"}</dd>
+                      <dt>Corequisites</dt>
+                      <dd>{course.corequisiteText || "None listed"}</dd>
+                      <dt>Degree requirements</dt>
+                      <dd>
+                        {requirementLabels(course).join(" · ")}
+                        <p className="sc-footnote">
+                          Credit categories used by your progress report; subject to program rules.
+                        </p>
+                      </dd>
+                      <dt>Historical averages &amp; instructors</dt>
+                      <dd>
+                        <HistoricalStatistics course={course} />
+                      </dd>
+                      <dt>Your interests</dt>
+                      <dd>
+                        <mark>
+                          {terms.length
+                            ? matched.length
+                              ? `Catalog matches: ${matched.join(", ")}`
+                              : "No catalog matches for your current search"
+                            : "Enter interests in Search Courses to highlight alignment"}
+                        </mark>
+                      </dd>
+                    </dl>
+                    {eligibility[code].hasHighSchool && (
+                      <p className="sc-footnote">
+                        High school prerequisites are assumed satisfied. Verify that you meet them.
+                      </p>
+                    )}
+                    {eligibility[code].review && (
+                      <p className="sc-footnote">
+                        Check grade, standing, and permission requirements in the Calendar.
+                      </p>
+                    )}
+                    <a href={course.sourceUrl} target="_blank" rel="noreferrer">
+                      Academic Calendar source ↗
+                    </a>
+                    {planButton(code)}
+                  </article>
+                );
+              })}
+            </div>
+            <div className="sc-summary">
+              <h3>How they differ</h3>
+              <p>
+                {comparison
+                  .map(
+                    (code) =>
+                      `${code} is a ${COURSES[code].level}-level course worth ${COURSES[code].creditsLabel} credits, with ${COURSES[code].prerequisiteText ? "listed prerequisites" : "no listed prerequisites"}`,
+                  )
+                  .join("; ")}
+                . Their catalog topics are{" "}
+                {topicsFor(COURSES[comparison[0]]).join(", ") || "not tagged"} and{" "}
+                {topicsFor(COURSES[comparison[1]]).join(", ") || "not tagged"}, respectively. Review
+                the descriptions and requirements above in light of your interests and completed
+                courses.
+              </p>
+            </div>
+          </>
+        )}
+      </dialog>
+    </div>
+  );
+}
+
 function App() {
+  const [view, setView] = useState<"constellation" | "search">("constellation");
   const [completed, setCompleted] = useState([...INITIAL_COMPLETED]);
   const [planned, setPlanned] = useState([...INITIAL_PLANNED]);
   const [center, setCenter] = useState("CPSC 110");
@@ -317,6 +831,26 @@ function App() {
     { code: string; pan: MapPoint; zoom: number; positions: Record<string, MapPoint> }[]
   >([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const courseDetailsRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!selected) return;
+    const dismissOutside = (event: MouseEvent) => {
+      if (event.target instanceof Node && !courseDetailsRef.current?.contains(event.target)) {
+        setSelected(null);
+      }
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelected(null);
+    };
+    // Capture observes outside clicks without stopping their normal actions.
+    // The central node's click handler can then reopen its course card.
+    document.addEventListener("click", dismissOutside, true);
+    document.addEventListener("keydown", dismissOnEscape, true);
+    return () => {
+      document.removeEventListener("click", dismissOutside, true);
+      document.removeEventListener("keydown", dismissOnEscape, true);
+    };
+  }, [selected]);
   const [hoveredCourse, setHoveredCourse] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -431,17 +965,23 @@ function App() {
   const initial = COURSE_POSITIONS["CPSC 110"];
 
   const focusCourse = (code: string, showDetails = true) => {
-    if (code !== center) {
-      setHistory((items) => [...items, { code: center, pan: { ...pan }, zoom, positions }]);
-      setCenter(code);
-      if (mapArea) {
-        const fitted = fitNeighborhood(code, positions, mapArea, zoom);
-        setPositions(fitted.positions);
-        setPan(fitted.pan);
-        setZoom(fitted.zoom);
-      }
+    if (code === center) {
+      setSelected(showDetails ? code : null);
+      return;
     }
-    setSelected(showDetails ? code : null);
+
+    // Navigation dismisses details; only clicking the current center opens them.
+    setSelected(null);
+    setHistory((items) => [...items, { code: center, pan: { ...pan }, zoom, positions }]);
+    setCenter(code);
+    if (mapArea) {
+      // Fit the new constellation from the preferred scale, independently of
+      // the previous course's automatic fit or the user's manual camera changes.
+      const fitted = fitNeighborhood(code, positions, mapArea, DEFAULT_ZOOM);
+      setPositions(fitted.positions);
+      setPan(fitted.pan);
+      setZoom(fitted.zoom);
+    }
   };
 
   const searchMatches = useMemo(() => {
@@ -563,7 +1103,7 @@ function App() {
         : status(code);
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${view === "search" ? "search-view" : ""}`}>
       <section className="map-workspace" aria-label="Course prerequisite map">
         <header className="topbar">
           <div className="brand-mark">
@@ -574,6 +1114,23 @@ function App() {
             <div className="brand-name">CoursePath</div>
             <div className="brand-subtitle">UBC · BSc Computer Science</div>
           </div>
+          <nav className="view-tabs" aria-label="Workspace views">
+            <button
+              aria-current={view === "constellation" ? "page" : undefined}
+              onClick={() => setView("constellation")}
+            >
+              Constellation
+            </button>
+            <button
+              aria-current={view === "search" ? "page" : undefined}
+              onClick={() => {
+                setSelected(null);
+                setView("search");
+              }}
+            >
+              Search &amp; Compare
+            </button>
+          </nav>
         </header>
 
         <div className="progress-card glass-panel">
@@ -773,7 +1330,9 @@ function App() {
                   <span className="node-core">
                     {layer(code) === 0 && <span className="center-dot" />}
                   </span>
-                  <strong>{code}</strong>
+                  <strong>
+                    <CourseCode code={code} />
+                  </strong>
                   {layer(code) < 2 && <small>{COURSES[code].title}</small>}
                 </button>
               );
@@ -849,6 +1408,9 @@ function App() {
             <i className="available" />
             Other courses
           </span>
+          <span>
+            <RequiredStar /> Required for graduation
+          </span>
           <div style={{ flexBasis: "100%", display: "grid", gap: 4, fontSize: 8 }}>
             <span>
               <span style={{ color: "#62e4f4", fontSize: 14 }} aria-hidden="true">
@@ -867,6 +1429,7 @@ function App() {
 
         {currentDetails && (
           <article
+            ref={courseDetailsRef}
             className="detail-card glass-panel"
             aria-label="Course information"
             style={{
@@ -896,19 +1459,12 @@ function App() {
                   : `${currentDetails.creditsLabel} credits`}
               </span>
             </div>
-            <h2>{currentDetails.code}</h2>
+            <h2>
+              <CourseCode code={currentDetails.code} />
+            </h2>
             <h3>{currentDetails.title}</h3>
             <p>{currentDetails.description}</p>
-            <div className="course-stats">
-              <div>
-                <span>Avg. grade</span>
-                <strong>Not published</strong>
-              </div>
-              <div>
-                <span>Professor</span>
-                <strong>Varies by section</strong>
-              </div>
-            </div>
+            <HistoricalStatistics course={currentDetails} />
             <div className="prereq-row">
               <span>Prerequisites</span>
               <strong>{currentDetails.prerequisiteText || "None"}</strong>
@@ -1100,7 +1656,9 @@ function App() {
                 <button className="course-link" onClick={() => focusCourse(code, false)}>
                   <i className="status-dot completed" />
                   <span>
-                    <strong>{code}</strong>
+                    <strong>
+                      <CourseCode code={code} />
+                    </strong>
                     <small>{COURSES[code].title}</small>
                   </span>
                 </button>
@@ -1135,7 +1693,9 @@ function App() {
                 <button className="course-link" onClick={() => focusCourse(code, false)}>
                   <i className="status-dot planned" />
                   <span>
-                    <strong>{code}</strong>
+                    <strong>
+                      <CourseCode code={code} />
+                    </strong>
                     <small>{COURSES[code].title}</small>
                   </span>
                 </button>
@@ -1168,6 +1728,16 @@ function App() {
           </button>
         </footer>
       </aside>
+      <div className="search-view-content" hidden={view !== "search"}>
+        <SearchCompare
+          planned={planned}
+          completed={completed}
+          eligibility={eligibility}
+          status={status}
+          addPlan={addPlan}
+          removePlan={(code) => setPlanned((items) => items.filter((item) => item !== code))}
+        />
+      </div>
     </main>
   );
 }
