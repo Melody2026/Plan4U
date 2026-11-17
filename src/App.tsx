@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { COURSE_LIST, COURSES, type Course } from "./data/courses";
+import { inferCompletedPrerequisites } from "./completedPrerequisites";
 
 const REQUIRED_COURSES = new Set([
   "CPSC 210",
@@ -132,6 +133,251 @@ const Icon = ({
     </svg>
   );
 };
+
+function GlobalCourseSearch({ onSelect }: { onSelect: (code: string) => void }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const options = COURSE_LIST.filter((c) =>
+    `${c.code} ${c.title}`.toLowerCase().includes(query.trim().toLowerCase()),
+  ).slice(0, 10);
+  const choose = (code: string) => {
+    onSelect(code);
+    setQuery("");
+    setOpen(false);
+    setActive(0);
+  };
+  useEffect(() => {
+    document.getElementById(`global-course-${active}`)?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+  return (
+    <div
+      className="global-course-search"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <Icon name="search" size={15} />
+      <input
+        placeholder="Search courses..."
+        aria-label="Search courses"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open && Boolean(query.trim())}
+        aria-controls="global-course-options"
+        aria-activedescendant={
+          open && query.trim() && options[active] ? `global-course-${active}` : undefined
+        }
+        value={query}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setActive(0);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            setOpen(true);
+            setActive((old) =>
+              options.length
+                ? (old + (e.key === "ArrowDown" ? 1 : -1) + options.length) % options.length
+                : 0,
+            );
+          }
+          if (e.key === "Enter" && open && query.trim() && options[active]) {
+            e.preventDefault();
+            choose(options[active].code);
+          }
+        }}
+      />
+      {open && query.trim() && (
+        <div
+          id="global-course-options"
+          className="global-course-options"
+          role="listbox"
+          aria-label="Matching courses"
+        >
+          {options.map((course, index) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={active === index}
+              id={`global-course-${index}`}
+              key={course.code}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => choose(course.code)}
+            >
+              <CourseCode code={course.code} />
+              <small>{course.title}</small>
+            </button>
+          ))}
+          {!options.length && <p>No matching courses.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TakenCoursesEditor({
+  completed,
+  onSave,
+  onCancel,
+}: {
+  completed: string[];
+  onSave: (codes: string[]) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(new Set(completed));
+  const [automatic, setAutomatic] = useState(new Set<string>());
+  const [suppressed, setSuppressed] = useState(new Set<string>());
+  const [filter, setFilter] = useState("");
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  const canInfer = (course: Course) => !evaluatePrerequisites(course, new Set()).review;
+  const addCourses = (codes: string[]) => {
+    let next = new Set(draft);
+    const inferred = new Set(automatic);
+    const exclusions = new Set(suppressed);
+    for (const code of codes) {
+      exclusions.delete(code);
+      const result = inferCompletedPrerequisites(code, next, COURSES, canInfer, exclusions);
+      next = result.selected;
+      for (const item of result.inferred) inferred.add(item);
+      inferred.delete(code);
+    }
+    setDraft(next);
+    setAutomatic(inferred);
+    setSuppressed(exclusions);
+  };
+  const pending = [...draft]
+    .map((code) => COURSES[code])
+    .filter(
+      (c) =>
+        c.prerequisitePaths.length > 1 &&
+        canInfer(c) &&
+        !evaluatePrerequisites(c, draft).met &&
+        !c.prerequisitePaths.some((path) => path.every((item) => draft.has(item))),
+    );
+  const levels = [...new Set([100, 200, 300, 400, ...COURSE_LIST.map((c) => c.level)])].sort(
+    (a, b) => a - b,
+  );
+  return (
+    <dialog
+      ref={dialog}
+      className="taken-dialog"
+      onCancel={onCancel}
+      aria-labelledby="taken-dialog-title"
+    >
+      <div className="taken-dialog-heading">
+        <h2 id="taken-dialog-title">Add Courses Taken</h2>
+        <button aria-label="Close Add Courses Taken" onClick={onCancel}>
+          <Icon name="x" />
+        </button>
+      </div>
+      <input
+        className="taken-filter"
+        autoFocus
+        placeholder="Search courses..."
+        aria-label="Filter courses taken checklist"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+      />
+      <nav className="taken-levels" aria-label="Course levels">
+        {[100, 200, 300, 400].map((level) => (
+          <button
+            key={level}
+            onClick={() =>
+              document
+                .getElementById(`taken-level-${level}`)
+                ?.scrollIntoView({ block: "start", behavior: "smooth" })
+            }
+          >
+            {level}-level
+          </button>
+        ))}
+      </nav>
+      <div className="taken-checklist">
+        {pending.length > 0 && (
+          <div className="taken-alternatives">
+            {pending.map((course) => (
+              <div key={course.code}>
+                <strong>{course.code}: choose a prerequisite path</strong>
+                <div>
+                  {course.prerequisitePaths.map((path, index) => (
+                    <button
+                      key={index}
+                      disabled={path.some((item) => !COURSES[item])}
+                      onClick={() => addCourses(path.filter((item) => COURSES[item]))}
+                    >
+                      {path.join(" + ")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {levels.map((level) => {
+          const courses = COURSE_LIST.filter(
+            (c) =>
+              c.level === level &&
+              `${c.code} ${c.title}`.toLowerCase().includes(filter.trim().toLowerCase()),
+          ).sort((a, b) => a.code.localeCompare(b.code));
+          return (
+            <section key={level} id={`taken-level-${level}`}>
+              <h3>{level}-level</h3>
+              {courses.map((course) => (
+                <label className="taken-checklist-row" key={course.code}>
+                  <input
+                    type="checkbox"
+                    checked={draft.has(course.code)}
+                    onChange={(e) => {
+                      if (e.target.checked) addCourses([course.code]);
+                      else {
+                        setDraft((old) => {
+                          const next = new Set(old);
+                          next.delete(course.code);
+                          return next;
+                        });
+                        setAutomatic((old) => {
+                          const next = new Set(old);
+                          next.delete(course.code);
+                          return next;
+                        });
+                        setSuppressed((old) => new Set(old).add(course.code));
+                      }
+                    }}
+                  />
+                  <strong>
+                    <CourseCode code={course.code} />
+                  </strong>
+                  <span>{course.title}</span>
+                  {automatic.has(course.code) && (
+                    <small title="Automatically selected prerequisite. Uncheck to correct.">
+                      Auto
+                    </small>
+                  )}
+                </label>
+              ))}
+              {!courses.length && <p className="taken-no-results">No matching courses.</p>}
+            </section>
+          );
+        })}
+      </div>
+      <footer className="taken-actions">
+        <span aria-live="polite">{draft.size} selected</span>
+        <button onClick={onCancel}>Cancel</button>
+        <button className="taken-save" onClick={() => onSave([...draft])}>
+          Save Courses
+        </button>
+      </footer>
+    </dialog>
+  );
+}
 
 function AppHeader({
   view,
@@ -580,32 +826,34 @@ function SearchCompare({
   const resolveChoice = (value: string) =>
     COURSE_LIST.find((c) => c.code.toLowerCase() === value.trim().toLowerCase());
   const chosen = choices.map(resolveChoice);
-  const eligibilityText = (code: string) => {
-    const c = COURSES[code];
-    const rule = eligibility[code];
-    return completed.includes(code)
-      ? "Completed"
-      : c.referenceOnly
-        ? "Reference only — no current Vancouver listing"
-        : rule.review
-          ? "Review additional requirements"
-          : rule.met
-            ? "Prerequisites satisfied"
-            : "Prerequisites incomplete";
+  const courseStatusText = (code: string) => {
+    const isTaken = completed.includes(code);
+    const isPlanned = planned.includes(code);
+    const incomplete = !isTaken && !isPlanned && !eligibility[code].met;
+    const label = isTaken
+      ? "Taken"
+      : isPlanned
+        ? "Already Added"
+        : incomplete
+          ? "Prerequisites incomplete"
+          : null;
+    return label ? (
+      <p className={`sc-course-status${incomplete ? " sc-course-status-incomplete" : ""}`}>
+        {label}
+      </p>
+    ) : null;
   };
   const planButton = (code: string) => (
     <button
-      className={`sc-plan ${status(code)}`}
-      disabled={completed.includes(code) || planned.includes(code) || COURSES[code].referenceOnly}
+      className="sc-plan"
+      disabled={completed.includes(code) || planned.includes(code)}
       onClick={() => addPlan(code)}
     >
       {completed.includes(code)
-        ? "Completed"
+        ? "Taken"
         : planned.includes(code)
-          ? "Planned"
-          : COURSES[code].referenceOnly
-            ? "Reference only"
-            : "+ Add to Plan"}
+          ? "Already Added"
+          : "+ Add to Plan"}
     </button>
   );
   return (
@@ -690,12 +938,7 @@ function SearchCompare({
                   <span key={topic}>{topic}</span>
                 ))}
               </div>
-              <div className={`sc-status ${status(course.code)}`}>
-                {eligibilityText(course.code)}
-                {eligibility[course.code].hasHighSchool &&
-                  " · High school prerequisites assumed satisfied"}
-                {course.corequisiteText && " · Check listed corequisites"}
-              </div>
+              {courseStatusText(course.code)}
             </article>
           ))}
           {!results.length && (
@@ -776,60 +1019,69 @@ function SearchCompare({
             <div className="sc-comparison-grid">
               {comparison.map((code) => {
                 const course = COURSES[code];
-                const matched = terms.filter((term) => searchText(course).includes(term));
                 return (
                   <article key={code}>
                     <h2>
                       <CourseCode code={code} />
                     </h2>
-                    <h3>{course.title}</h3>
-                    <div className={`sc-status ${status(code)}`}>{eligibilityText(code)}</div>
+                    <div className="sc-comparison-title">
+                      <h3>{course.title}</h3>
+                      {courseStatusText(code)}
+                    </div>
                     <dl>
-                      <dt>Description</dt>
-                      <dd>{course.description}</dd>
-                      <dt>Main topics</dt>
-                      <dd>
-                        {topicsFor(course).join(" · ") ||
-                          "No topic tags identified in catalog text"}
-                      </dd>
-                      <dt>Credits</dt>
-                      <dd>{course.creditsLabel}</dd>
-                      <dt>Prerequisites</dt>
-                      <dd>{course.prerequisiteText || "None listed"}</dd>
-                      <dt>Corequisites</dt>
-                      <dd>{course.corequisiteText || "None listed"}</dd>
-                      <dt>Degree requirements</dt>
-                      <dd>
-                        {requirementLabels(course).join(" · ")}
-                        <p className="sc-footnote">
-                          Credit categories used by your progress report; subject to program rules.
-                        </p>
-                      </dd>
-                      <dt>Historical averages &amp; instructors</dt>
-                      <dd>
-                        <HistoricalStatistics course={course} />
-                      </dd>
-                      <dt>Your interests</dt>
-                      <dd>
-                        <mark>
-                          {terms.length
-                            ? matched.length
-                              ? `Catalog matches: ${matched.join(", ")}`
-                              : "No catalog matches for your current search"
-                            : "Enter interests in Search Courses to highlight alignment"}
-                        </mark>
-                      </dd>
+                      <div className="sc-comparison-section">
+                        <dt>Description</dt>
+                        <dd>{course.description}</dd>
+                      </div>
+                      <div className="sc-comparison-section">
+                        <dt>Main topics</dt>
+                        <dd>
+                          {topicsFor(course).join(" · ") ||
+                            "No topic tags identified in catalog text"}
+                        </dd>
+                      </div>
+                      <div className="sc-comparison-section">
+                        <dt>Credits</dt>
+                        <dd>{course.creditsLabel}</dd>
+                      </div>
+                      <div className="sc-comparison-section">
+                        <dt>Prerequisites</dt>
+                        <dd>
+                          {course.prerequisiteText || "None listed"}
+                          {eligibility[code].hasHighSchool && (
+                            <p className="sc-footnote">
+                              High school prerequisites are assumed satisfied. Verify that you meet
+                              them.
+                            </p>
+                          )}
+                          {eligibility[code].review && (
+                            <p className="sc-footnote">
+                              Check grade, standing, and permission requirements in the Calendar.
+                            </p>
+                          )}
+                        </dd>
+                      </div>
+                      <div className="sc-comparison-section">
+                        <dt>Corequisites</dt>
+                        <dd>{course.corequisiteText || "None listed"}</dd>
+                      </div>
+                      <div className="sc-comparison-section">
+                        <dt>Degree requirements</dt>
+                        <dd>
+                          {requirementLabels(course).join(" · ")}
+                          <p className="sc-footnote">
+                            Credit categories used by your progress report; subject to program
+                            rules.
+                          </p>
+                        </dd>
+                      </div>
+                      <div className="sc-comparison-section">
+                        <dt>Historical averages &amp; instructors</dt>
+                        <dd>
+                          <HistoricalStatistics course={course} />
+                        </dd>
+                      </div>
                     </dl>
-                    {eligibility[code].hasHighSchool && (
-                      <p className="sc-footnote">
-                        High school prerequisites are assumed satisfied. Verify that you meet them.
-                      </p>
-                    )}
-                    {eligibility[code].review && (
-                      <p className="sc-footnote">
-                        Check grade, standing, and permission requirements in the Calendar.
-                      </p>
-                    )}
                     <a href={course.sourceUrl} target="_blank" rel="noreferrer">
                       Academic Calendar source ↗
                     </a>
@@ -837,22 +1089,6 @@ function SearchCompare({
                   </article>
                 );
               })}
-            </div>
-            <div className="sc-summary">
-              <h3>How they differ</h3>
-              <p>
-                {comparison
-                  .map(
-                    (code) =>
-                      `${code} is a ${COURSES[code].level}-level course worth ${COURSES[code].creditsLabel} credits, with ${COURSES[code].prerequisiteText ? "listed prerequisites" : "no listed prerequisites"}`,
-                  )
-                  .join("; ")}
-                . Their catalog topics are{" "}
-                {topicsFor(COURSES[comparison[0]]).join(", ") || "not tagged"} and{" "}
-                {topicsFor(COURSES[comparison[1]]).join(", ") || "not tagged"}, respectively. Review
-                the descriptions and requirements above in light of your interests and completed
-                courses.
-              </p>
             </div>
           </>
         )}
@@ -891,8 +1127,7 @@ function App() {
     };
   }, [selected]);
   const [hoveredCourse, setHoveredCourse] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [takenEditorOpen, setTakenEditorOpen] = useState(false);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
@@ -1023,32 +1258,6 @@ function App() {
     }
   };
 
-  const searchMatches = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return [];
-    return COURSE_LIST.filter(
-      (course) =>
-        !completed.includes(course.code) &&
-        (course.code.toLowerCase().includes(term) || course.title.toLowerCase().includes(term)),
-    ).slice(0, 8);
-  }, [query, completed]);
-
-  // Search selection updates course status only; map selection uses focusCourse.
-  const selectTakenCourse = (code: string) => {
-    if (!COURSES[code]) return;
-    setCompleted((items) => (items.includes(code) ? items : [...items, code]));
-    setPlanned((items) => items.filter((item) => item !== code));
-    setQuery("");
-    setSearchOpen(false);
-  };
-
-  const addCompleted = () => {
-    const exact = COURSE_LIST.find(
-      (course) => course.code.toLowerCase() === query.trim().toLowerCase(),
-    );
-    if (exact) selectTakenCourse(exact.code);
-  };
-
   const addPlan = (code: string) => {
     if (!completed.includes(code) && !planned.includes(code))
       setPlanned((items) => [...items, code]);
@@ -1151,6 +1360,10 @@ function App() {
         }}
       />
       <section className="map-workspace" aria-label="Course prerequisite map">
+        <GlobalCourseSearch onSelect={(code) => {
+          focusCourse(code, false);
+          setSelected(code);
+        }} />
         <div className="progress-card glass-panel">
           <div className="panel-heading">
             <div>
@@ -1573,99 +1786,20 @@ function App() {
           <div className="section-title">
             <div>
               <span className="section-icon green">
-                <Icon name="check" size={15} />
+                <i className="status-dot completed" />
               </span>
               <h3>Courses taken</h3>
             </div>
-            <span>{completed.length}</span>
-          </div>
-          <div
-            data-course-search
-            style={{ position: "relative" }}
-            onBlur={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                setSearchOpen(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setSearchOpen(false);
-            }}
-          >
-            <div className="course-search">
-              <Icon name="search" size={17} />
-              <input
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  setSearchOpen(true);
-                }}
-                onFocus={() => setSearchOpen(true)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addCompleted();
-                  }
-                  if (event.key === "ArrowDown") {
-                    event.preventDefault();
-                    event.currentTarget
-                      .closest("[data-course-search]")
-                      ?.querySelector<HTMLButtonElement>("[data-suggestion]")
-                      ?.focus();
-                  }
-                }}
-                aria-label="Search courses to add to Courses Taken"
-                aria-expanded={searchOpen && Boolean(query.trim())}
-                aria-controls="taken-course-suggestions"
-                autoComplete="off"
-                placeholder="Search course code"
-              />
-              <button onClick={addCompleted}>Add</button>
-            </div>
-            {searchOpen && query.trim() && (
-              <div
-                id="taken-course-suggestions"
-                aria-label="Matching courses"
-                style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  zIndex: 30,
-                  maxHeight: 260,
-                  overflowY: "auto",
-                  padding: 6,
-                  borderRadius: 8,
-                  border: "1px solid #253248",
-                  background: "#0a101a",
-                  boxShadow: "0 12px 30px #0008",
-                }}
+            <div className="taken-heading-actions">
+              <span>{completed.length}</span>
+              <button
+                className="taken-add"
+                aria-label="Add courses taken"
+                onClick={() => setTakenEditorOpen(true)}
               >
-                {searchMatches.map((course) => (
-                  <button
-                    key={course.code}
-                    data-suggestion
-                    className="course-link"
-                    onClick={() => selectTakenCourse(course.code)}
-                    style={{
-                      width: "100%",
-                      padding: "9px 8px",
-                      textAlign: "left",
-                      borderRadius: 6,
-                    }}
-                  >
-                    <span>
-                      <strong>{course.code}</strong>
-                      <small>{course.title}</small>
-                    </span>
-                    <Icon name="plus" size={14} />
-                  </button>
-                ))}
-                {!searchMatches.length && (
-                  <p style={{ padding: 8, color: "#748399", fontSize: 11 }}>
-                    No matching courses to add.
-                  </p>
-                )}
-              </div>
-            )}
+                <Icon name="plus" size={15} />
+              </button>
+            </div>
           </div>
           <div className="course-list">
             {completed.map((code) => (
@@ -1711,6 +1845,17 @@ function App() {
           />
         </section>
       </aside>
+      {takenEditorOpen && (
+        <TakenCoursesEditor
+          completed={completed}
+          onCancel={() => setTakenEditorOpen(false)}
+          onSave={(codes) => {
+            setCompleted(codes);
+            setPlanned((items) => items.filter((code) => !codes.includes(code)));
+            setTakenEditorOpen(false);
+          }}
+        />
+      )}
       <div className="search-view-content" hidden={view !== "search"}>
         <SearchCompare
           planned={planned}
