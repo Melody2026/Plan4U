@@ -382,9 +382,11 @@ function TakenCoursesEditor({
 function AppHeader({
   view,
   onViewChange,
+  onCourseSelect,
 }: {
   view: "constellation" | "search";
   onViewChange: (view: "constellation" | "search") => void;
+  onCourseSelect: (code: string) => void;
 }) {
   return (
     <header className="topbar">
@@ -414,6 +416,7 @@ function AppHeader({
           </button>
         </nav>
       </div>
+      {view === "constellation" && <GlobalCourseSearch onSelect={onCourseSelect} />}
     </header>
   );
 }
@@ -665,6 +668,7 @@ const fitNeighborhood = (
   // Prefer the larger view, reducing it in small steps only when direct nodes
   // cannot fit with their existing label clearance inside the unobstructed area.
   for (let attempt = 0; attempt < 80; attempt++) {
+    const spacing = attempt % 2 === 0 ? 1 : 0.88;
     const halfWidth = Math.min(area.width / 2 - area.left, area.right - area.width / 2) / fitZoom;
     const halfHeight = (area.bottom - area.top) / fitZoom / 2;
     const centerX = area.width / 2;
@@ -684,10 +688,10 @@ const fitNeighborhood = (
       Object.entries(placed).every(
         ([other, position]) =>
           Math.hypot(position.x - point.x, position.y - point.y) >=
-          radius + (other === code ? 72 : 57) + 16,
+          (other === code ? 160 : 156) * spacing,
       );
     const candidates: MapPoint[] = [];
-    for (let radius = 155; radius <= Math.hypot(halfWidth, halfHeight); radius += 75) {
+    for (let radius = 190 * spacing; radius <= Math.hypot(halfWidth, halfHeight); radius += 90 * spacing) {
       for (let step = 0; step < 48; step++) {
         const angle = (step / 48) * Math.PI * 2;
         const irregularity = Math.sin(step * 7 + radius) * 6;
@@ -712,7 +716,7 @@ const fitNeighborhood = (
       if (available[0]) placed[neighbor] = available[0];
     }
     if (fits(anchor, 72) && direct.every((neighbor) => placed[neighbor])) break;
-    fitZoom *= 0.95;
+    if (attempt % 2 === 1) fitZoom *= 0.95;
   }
   return {
     positions: { ...previous, ...placed },
@@ -1142,15 +1146,24 @@ function App() {
     if (!stage) return;
     const measure = () => {
       const bounds = stage.getBoundingClientRect();
+      const workspace = stage.parentElement!;
+      const toolbar = workspace.querySelector<HTMLElement>(".map-toolbar");
+      const sidebarHeading = document.querySelector<HTMLElement>(".sidebar-header h2");
+      if (toolbar && sidebarHeading) {
+        const workspaceBounds = workspace.getBoundingClientRect();
+        const headingBounds = sidebarHeading.getBoundingClientRect();
+        const toolbarBounds = toolbar.getBoundingClientRect();
+        toolbar.style.top = `${(headingBounds.top + headingBounds.bottom) / 2 - workspaceBounds.top - toolbarBounds.height / 2}px`;
+      }
       let left = 16,
         top = 16,
         bottom = bounds.height - 16;
       const obstacles: MapArea["obstacles"] = [];
       stage
-        .parentElement!.querySelectorAll(".progress-card, .global-course-search, .map-label, .map-controls, .legend")
+        .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar, .legend")
         .forEach((element) => {
           const rect = element.getBoundingClientRect();
-          if (element.classList.contains("progress-card") || element.classList.contains("global-course-search"))
+          if (element.classList.contains("progress-card") || element.classList.contains("map-toolbar"))
             obstacles.push({ left: rect.left - bounds.left, right: rect.right - bounds.left, top: rect.top - bounds.top, bottom: rect.bottom - bounds.top });
           else if (element.classList.contains("map-label"))
             top = Math.max(top, rect.bottom - bounds.top + 18);
@@ -1169,8 +1182,10 @@ function App() {
     };
     const observer = new ResizeObserver(measure);
     observer.observe(stage);
+    const sidebarHeading = document.querySelector(".sidebar-header h2");
+    if (sidebarHeading) observer.observe(sidebarHeading);
     stage
-      .parentElement!.querySelectorAll(".progress-card, .global-course-search, .map-label, .map-controls, .legend")
+      .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar, .legend")
       .forEach((panel) => observer.observe(panel));
     measure();
     return () => observer.disconnect();
@@ -1358,16 +1373,16 @@ function App() {
     <main className={`app-shell ${view === "search" ? "search-view" : ""}`}>
       <AppHeader
         view={view}
+        onCourseSelect={(code) => {
+          focusCourse(code, false);
+          setSelected(code);
+        }}
         onViewChange={(nextView) => {
           if (nextView === "search") setSelected(null);
           setView(nextView);
         }}
       />
       <section className="map-workspace" aria-label="Course prerequisite map">
-        <GlobalCourseSearch onSelect={(code) => {
-          focusCourse(code, false);
-          setSelected(code);
-        }} />
         <div className="progress-card glass-panel">
           <div className="panel-heading">
             <div>
@@ -1508,8 +1523,8 @@ function App() {
                 const dx = b.x - a.x;
                 const dy = b.y - a.y;
                 const length = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-                const startR = layer(from) === 0 ? 61 : layer(from) === 1 ? 49 : 37;
-                const endR = layer(to) === 0 ? 71 : layer(to) === 1 ? 60 : 46;
+                const startR = layer(from) === 0 ? 55 : layer(from) === 1 ? 44 : 33;
+                const endR = layer(to) === 0 ? 64 : layer(to) === 1 ? 54 : 42;
                 return (
                   <line
                     style={{
@@ -1577,43 +1592,7 @@ function App() {
           <p>Drag to pan · Scroll to zoom · Select a star to explore</p>
         </div>
 
-        <div className="map-footer-controls">
-          <div className="legend glass-panel">
-            <span>
-              <i className="satisfied" />
-              Prerequisites satisfied
-            </span>
-            <span>
-              <i className="completed" />
-              Completed
-            </span>
-            <span>
-              <i className="planned" />
-              Planned
-            </span>
-            <span>
-              <i className="available" />
-              Other courses
-            </span>
-            <span>
-              <RequiredStar /> Required for graduation
-            </span>
-            <div className="legend-lower">
-              <div className="legend-arrow-key">
-                <span>
-                  <span style={{ color: "#62e4f4", fontSize: 14 }} aria-hidden="true">
-                    &#8594;
-                  </span>{" "}
-                  Cyan arrow: Prerequisite.
-                </span>
-                <span>
-                  <span style={{ color: "#ffa65c", fontSize: 14 }} aria-hidden="true">
-                    &#8594;
-                  </span>{" "}
-                  Orange arrow: Dependent course.
-                </span>
-              </div>
-              <div className="legend-toolbar-space">
+        <div className="map-toolbar">
                 <div className="map-controls glass-panel">
                   <button
                     disabled={!history.length}
@@ -1666,7 +1645,45 @@ function App() {
                     <Icon name="reset" /> Reset
                   </button>
                 </div>
+        </div>
+
+        <div className="map-footer-controls">
+          <div className="legend glass-panel">
+            <span>
+              <i className="satisfied" />
+              Prerequisites satisfied
+            </span>
+            <span>
+              <i className="completed" />
+              Completed
+            </span>
+            <span>
+              <i className="planned" />
+              Planned
+            </span>
+            <span>
+              <i className="available" />
+              Other courses
+            </span>
+            <span>
+              <RequiredStar /> Required for graduation
+            </span>
+            <div className="legend-lower">
+              <div className="legend-arrow-key">
+                <span>
+                  <span style={{ color: "#62e4f4", fontSize: 14 }} aria-hidden="true">
+                    &#8594;
+                  </span>{" "}
+                  Cyan arrow: Prerequisite.
+                </span>
+                <span>
+                  <span style={{ color: "#ffa65c", fontSize: 14 }} aria-hidden="true">
+                    &#8594;
+                  </span>{" "}
+                  Orange arrow: Dependent course.
+                </span>
               </div>
+
             </div>
           </div>
         </div>

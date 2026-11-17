@@ -3,8 +3,9 @@
 
 .global-course-search {
   position: absolute;
-  top: 110px;
-  right: 18px;
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%);
   z-index: 15;
   width: 210px;
   display: flex;
@@ -1238,6 +1239,12 @@
   justify-items: center;
   pointer-events: none;
 }
+.map-toolbar {
+  position: absolute;
+  top: 110px;
+  right: 18px;
+  z-index: 21;
+}
 .map-controls {
   display: flex;
   height: 40px;
@@ -2072,14 +2079,14 @@
 .course-node.planned strong { color: #fdeaA1; }
 .course-node.satisfied strong { color: #edddff; }
 .course-node {
-  width: 110px;
-  height: 110px;
+  width: 99px;
+  height: 99px;
   border-color: rgba(120, 179, 255, 0.55);
   background: radial-gradient(circle at 50% 38%, rgba(62, 113, 181, 0.3), rgba(12, 23, 39, 0.9) 68%);
   box-shadow: inset 0 0 22px rgba(73, 137, 225, 0.12), 0 0 22px rgba(65, 139, 237, 0.24);
 }
-.course-node.layer-0 { width: 143px; height: 143px; }
-.course-node.layer-2 { width: 67px; height: 67px; min-height: 67px; }
+.course-node.layer-0 { width: 129px; height: 129px; }
+.course-node.layer-2 { width: 60px; height: 60px; min-height: 60px; }
 .course-node.completed {
   border-color: rgba(112, 236, 163, 0.58);
   background: radial-gradient(circle at 50% 38%, rgba(52, 139, 91, 0.27), rgba(12, 27, 27, 0.9) 68%);
