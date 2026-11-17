@@ -434,6 +434,31 @@
   font-weight: 400;
   margin-top: 0;
 }
+.sc-course-navigation {
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: filter 0.18s ease;
+}
+.sc-course-navigation > span {
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.18s ease;
+}
+.sc-course-navigation:hover,
+.sc-course-navigation:focus-visible {
+  filter: brightness(1.2);
+}
+.sc-course-navigation:hover > span,
+.sc-course-navigation:focus-visible > span {
+  text-decoration-color: currentColor;
+}
+.sc-course-navigation:focus-visible {
+  outline: 2px solid #a8ceff;
+  outline-offset: 3px;
+}
 .sc-course .sc-plan {
   flex-shrink: 0;
   padding: 5px 8px;

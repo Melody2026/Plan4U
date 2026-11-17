@@ -939,7 +939,8 @@ function SearchCompare({
             <article className={`sc-course${planned.includes(course.code) ? " is-planned" : ""}${completed.includes(course.code) ? " is-completed" : ""}${chosen.some((choice) => choice?.code === course.code) ? " is-compared" : ""}`} key={course.code}>
               <div className="sc-course-heading">
                 <h2>
-                  <CourseCode code={course.code} /> <span>{course.title}</span>
+                  <span><button className="sc-course-navigation" onClick={() => onSelectCourse(course.code)}><CourseCode code={course.code} /></button></span>
+                  <span>{course.title}</span>
                 </h2>
                 {planButton(course.code)}
               </div>
@@ -1057,7 +1058,7 @@ function SearchCompare({
                 return (
                   <article key={code}>
                     <h2>
-                      <CourseCode code={code} />
+                      <button className="sc-course-navigation" onClick={() => { setComparison(null); onSelectCourse(code); }}><CourseCode code={code} /></button>
                     </h2>
                     <div className="sc-comparison-title">
                       <h3>{course.title}</h3>
@@ -1995,7 +1996,16 @@ function App() {
           completed={completed}
           eligibility={eligibility}
           status={status}
-          onSelectCourse={(code) => { setView("constellation"); focusCourse(code, false); }}
+          onSelectCourse={(code) => {
+            setView("constellation");
+            if (code === center && mapArea) {
+              setSelected(null);
+              const fitted = fitNeighborhood(code, positions, mapArea, DEFAULT_ZOOM);
+              setPositions(fitted.positions);
+              setPan(fitted.pan);
+              setZoom(fitted.zoom);
+            } else focusCourse(code, false);
+          }}
           addPlan={addPlan}
           removePlan={(code) => setPlanned((items) => items.filter((item) => item !== code))}
         />
