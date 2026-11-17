@@ -1,0 +1,11 @@
+{
+  "description": "Plan a UBC degree by exploring prerequisite-linked courses, tracking completed and planned classes, and monitoring progress toward graduation requirements.",
+  "language": "en",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

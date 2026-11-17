@@ -1371,7 +1371,7 @@ function App() {
               <h2>
                 {requirements[0].done}{" "}
                 {requirements[0].plan > 0 && (
-                  <span style={{ color: "#e9bd50", fontSize: 15 }}>+{requirements[0].plan} </span>
+                  <span style={{ color: "#e9bd50", fontSize: 17 }}>+{requirements[0].plan} </span>
                 )}
                 <small>/ {requirements[0].target} credits</small>
               </h2>
@@ -1577,84 +1577,97 @@ function App() {
           <p>Drag to pan · Scroll to zoom · Select a star to explore</p>
         </div>
 
-        <div className="map-controls glass-panel">
-          <button
-            disabled={!history.length}
-            onClick={() => {
-              const previous = history[history.length - 1];
-              if (!previous) return;
-              setCenter(previous.code);
-              setHistory((items) => items.slice(0, -1));
-              setSelected(null);
-              setPositions(previous.positions);
-              setPan(previous.pan);
-              setZoom(previous.zoom);
-            }}
-          >
-            <Icon name="back" /> Back
-          </button>
-          <span />
-          <button aria-label="Zoom out" onClick={() => setZoom((v) => Math.max(0.35, v - 0.15))}>
-            <Icon name="minus" />
-          </button>
-          <b>{Math.round(zoom * 100)}%</b>
-          <button aria-label="Zoom in" onClick={() => setZoom((v) => Math.min(1.45, v + 0.15))}>
-            <Icon name="plus" />
-          </button>
-          <span />
-          <button
-            onClick={() => {
-              setCenter("CPSC 110");
-              setHistory([]);
-              setSelected(null);
-              if (mapArea) {
-                const fitted = fitNeighborhood("CPSC 110", COURSE_POSITIONS, mapArea, DEFAULT_ZOOM);
-                setPositions(fitted.positions);
-                setPan(fitted.pan);
-                setZoom(fitted.zoom);
-              }
-            }}
-          >
-            <Icon name="reset" /> Reset
-          </button>
-        </div>
-
-        <div
-          className="legend glass-panel"
-          style={{ flexWrap: "wrap", maxWidth: "calc(100% - 56px)", rowGap: 8 }}
-        >
-          <span>
-            <i className="satisfied" />
-            Prerequisites satisfied
-          </span>
-          <span>
-            <i className="completed" />
-            Completed
-          </span>
-          <span>
-            <i className="planned" />
-            Planned
-          </span>
-          <span>
-            <i className="available" />
-            Other courses
-          </span>
-          <span>
-            <RequiredStar /> Required for graduation
-          </span>
-          <div style={{ flexBasis: "100%", display: "grid", gap: 4, fontSize: 8 }}>
+        <div className="map-footer-controls">
+          <div className="legend glass-panel">
             <span>
-              <span style={{ color: "#62e4f4", fontSize: 14 }} aria-hidden="true">
-                &#8594;
-              </span>{" "}
-              Cyan arrow: Prerequisite.
+              <i className="satisfied" />
+              Prerequisites satisfied
             </span>
             <span>
-              <span style={{ color: "#ffa65c", fontSize: 14 }} aria-hidden="true">
-                &#8594;
-              </span>{" "}
-              Orange arrow: Dependent course.
+              <i className="completed" />
+              Completed
             </span>
+            <span>
+              <i className="planned" />
+              Planned
+            </span>
+            <span>
+              <i className="available" />
+              Other courses
+            </span>
+            <span>
+              <RequiredStar /> Required for graduation
+            </span>
+            <div className="legend-lower">
+              <div className="legend-arrow-key">
+                <span>
+                  <span style={{ color: "#62e4f4", fontSize: 14 }} aria-hidden="true">
+                    &#8594;
+                  </span>{" "}
+                  Cyan arrow: Prerequisite.
+                </span>
+                <span>
+                  <span style={{ color: "#ffa65c", fontSize: 14 }} aria-hidden="true">
+                    &#8594;
+                  </span>{" "}
+                  Orange arrow: Dependent course.
+                </span>
+              </div>
+              <div className="legend-toolbar-space">
+                <div className="map-controls glass-panel">
+                  <button
+                    disabled={!history.length}
+                    onClick={() => {
+                      const previous = history[history.length - 1];
+                      if (!previous) return;
+                      setCenter(previous.code);
+                      setHistory((items) => items.slice(0, -1));
+                      setSelected(null);
+                      setPositions(previous.positions);
+                      setPan(previous.pan);
+                      setZoom(previous.zoom);
+                    }}
+                  >
+                    <Icon name="back" /> Back
+                  </button>
+                  <span />
+                  <button
+                    aria-label="Zoom out"
+                    onClick={() => setZoom((v) => Math.max(0.35, v - 0.15))}
+                  >
+                    <Icon name="minus" />
+                  </button>
+                  <b>{Math.round(zoom * 100)}%</b>
+                  <button
+                    aria-label="Zoom in"
+                    onClick={() => setZoom((v) => Math.min(1.45, v + 0.15))}
+                  >
+                    <Icon name="plus" />
+                  </button>
+                  <span />
+                  <button
+                    onClick={() => {
+                      setCenter("CPSC 110");
+                      setHistory([]);
+                      setSelected(null);
+                      if (mapArea) {
+                        const fitted = fitNeighborhood(
+                          "CPSC 110",
+                          COURSE_POSITIONS,
+                          mapArea,
+                          DEFAULT_ZOOM,
+                        );
+                        setPositions(fitted.positions);
+                        setPan(fitted.pan);
+                        setZoom(fitted.zoom);
+                      }
+                    }}
+                  >
+                    <Icon name="reset" /> Reset
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1707,7 +1720,7 @@ function App() {
               )}
             </div>
             {detailEligibility?.hasHighSchool && (
-              <p style={{ color: "#8390a4", fontSize: 10, lineHeight: 1.5 }}>
+              <p style={{ color: "#9aa9bd", fontSize: 13, lineHeight: 1.55 }}>
                 High school prerequisites are assumed satisfied. Please verify that you meet these
                 requirements.
               </p>
@@ -1778,9 +1791,6 @@ function App() {
           <div>
             <h2>Course plan</h2>
           </div>
-          <button aria-label="Collapse sidebar">
-            <Icon name="chevron" />
-          </button>
         </div>
         <section className="list-section">
           <div className="section-title">

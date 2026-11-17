@@ -679,8 +679,8 @@
   }
   body {
     margin: 0;
-    min-width: 1180px;
-    min-height: 720px;
+    height: 100dvh;
+    min-height: 0;
     overflow: hidden;
   }
   button,
@@ -702,14 +702,17 @@
 }
 
 .app-shell {
-  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   width: 100vw;
   display: grid;
-  grid-template-columns: minmax(820px, 1fr) 344px;
+  grid-template-columns: minmax(0, 1fr) 344px;
+  overflow: hidden;
   background: #070b13;
 }
 .map-workspace {
   position: relative;
+  min-height: 0;
   overflow: hidden;
   background:
     radial-gradient(circle at 55% 50%, rgba(40, 82, 141, 0.19), transparent 34%),
@@ -773,7 +776,7 @@
 .topbar-content {
   position: relative;
   width: calc(100% - 344px);
-  min-width: 820px;
+  min-width: 0;
   height: 100%;
   display: flex;
   align-items: center;
@@ -956,7 +959,7 @@
 .graph-stage {
   position: absolute;
   z-index: 2;
-  inset: 76px 0 0;
+  inset: 76px 0 170px;
   overflow: hidden;
   touch-action: none;
   cursor: grab;
@@ -1220,17 +1223,25 @@
   color: #4d5b70;
   font-size: 9px;
 }
-.map-controls {
+.map-footer-controls {
   position: absolute;
   z-index: 12;
   bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 28px;
+  right: 28px;
+  display: grid;
+  justify-items: center;
+  pointer-events: none;
+}
+.map-controls {
   display: flex;
   height: 40px;
   align-items: center;
   border-radius: 10px;
   padding: 0 5px;
+  max-width: 100%;
+  pointer-events: auto;
+  white-space: nowrap;
 }
 .map-controls button {
   display: flex;
@@ -1265,16 +1276,37 @@
   font-size: 9px;
 }
 .legend {
-  position: absolute;
-  z-index: 11;
-  left: 28px;
-  bottom: 24px;
   display: flex;
+  justify-self: start;
+  flex-wrap: wrap;
   gap: 15px;
+  row-gap: 8px;
+  max-width: 100%;
   padding: 10px 12px;
   border-radius: 9px;
   color: #738198;
   font-size: 9px;
+  pointer-events: auto;
+}
+.legend-lower {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: stretch;
+  min-width: 0;
+}
+.legend-arrow-key {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 4px;
+  font-size: 8px;
+}
+.legend-toolbar-space {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 24px;
 }
 .legend span {
   display: flex;
@@ -1469,7 +1501,8 @@
   z-index: 30;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   padding-top: 82px;
   overflow: hidden;
   border-left: 1px solid #1b2637;
@@ -1675,4 +1708,329 @@
   .course-list {
     max-height: 150px;
   }
+}
+
+/* Readability scale */
+.global-course-search {
+  width: 240px;
+  color: #a2b0c4;
+}
+.global-course-search input {
+  font-size: 14px;
+}
+.global-course-options button,
+.global-course-options p {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.global-course-options small {
+  color: #a2b0c4;
+  font-size: 12px;
+}
+.taken-heading-actions {
+  color: #a2b0c4;
+  font-size: 12px;
+}
+.taken-dialog-heading h2 {
+  font-size: 24px;
+}
+.taken-filter {
+  font-size: 14px;
+}
+.taken-levels button,
+.taken-alternatives button {
+  font-size: 13px;
+}
+.taken-checklist h3 {
+  color: #a2b0c4;
+  font-size: 15px;
+}
+.taken-checklist-row {
+  min-height: 46px;
+}
+.taken-checklist-row strong {
+  font-size: 14px;
+}
+.taken-checklist-row > span,
+.taken-alternatives,
+.taken-no-results {
+  color: #a2b0c4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.taken-checklist-row small {
+  font-size: 11px;
+}
+.taken-actions {
+  font-size: 14px;
+}
+.course-fact > span {
+  color: #7f90aa;
+  font-size: 11px;
+}
+.course-fact > strong {
+  color: #c2ccda;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.view-tabs button {
+  font-size: 14px;
+}
+.search-compare h1 {
+  font-size: 28px;
+}
+.search-compare h2 {
+  font-size: 20px;
+}
+.search-compare p {
+  color: #a2b0c4;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.sc-search > h1 {
+  font-size: 24px;
+}
+.sc-search-input {
+  color: #a2b0c4;
+}
+.sc-search-input input {
+  font-size: 14px;
+}
+.sc-filters button {
+  padding: 5px 10px;
+  color: #acb9cb;
+  font-size: 12px;
+}
+.sc-results-bar {
+  color: #a2b0c4;
+  font-size: 13px;
+}
+.sc-results-bar select {
+  font-size: 13px;
+}
+.sc-course {
+  padding: 12px 14px;
+}
+.sc-course-heading h2 {
+  font-size: 18px;
+  line-height: 1.4;
+}
+.sc-course-heading h2 > span + span {
+  color: #bdc8d8;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.sc-plan {
+  font-size: 13px;
+}
+.sc-course .sc-description {
+  color: #a2b0c4;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sc-description-toggle {
+  font-size: 12px;
+}
+.search-compare .sc-course-status {
+  color: #a2b0c4;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sc-course .sc-tags span,
+.sc-tags span {
+  color: #afbdd0;
+  font-size: 12px;
+}
+.sc-compare > h2 {
+  font-size: 20px;
+}
+.sc-choice {
+  color: #a8b6c9;
+  font-size: 13px;
+}
+.sc-choice input {
+  font-size: 14px;
+}
+.sc-compare-button {
+  font-size: 14px;
+}
+.search-compare .sc-footnote {
+  color: #8fa0b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sc-empty {
+  color: #a2b0c4;
+  font-size: 14px;
+}
+.sc-comparison-grid h2 {
+  font-size: 22px;
+}
+.sc-comparison-grid h3 {
+  color: #c3cede;
+  font-size: 17px;
+}
+.sc-comparison-grid dt {
+  color: #91a2ba;
+  font-size: 12px;
+}
+.sc-comparison-grid dd {
+  color: #c0cad9;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.sc-comparison-grid a {
+  font-size: 13px;
+}
+.brand-name {
+  font-size: 19px;
+}
+.brand-subtitle {
+  color: #8999b1;
+  font-size: 12px;
+}
+.term-pill {
+  color: #a0aec1;
+  font-size: 13px;
+}
+.progress-card {
+  width: 242px;
+}
+.eyebrow {
+  color: #8c9bb1;
+  font-size: 11px;
+}
+.panel-heading h2 {
+  font-size: 24px;
+}
+.panel-heading h2 small {
+  color: #8998ad;
+  font-size: 12px;
+}
+.degree-badge {
+  font-size: 11px;
+}
+.requirement-meta {
+  color: #9aa8ba;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.requirement-meta span:last-child {
+  color: #7e8da3;
+}
+.progress-key {
+  color: #8190a5;
+  font-size: 10px;
+}
+.course-node strong {
+  font-size: 14px;
+}
+.course-node small {
+  max-width: 78px;
+  color: #91a0b5;
+  font-size: 10px;
+  line-height: 1.25;
+}
+.course-node.layer-0 strong {
+  font-size: 17px;
+}
+.course-node.layer-0 small {
+  max-width: 98px;
+  color: #aeb9ca;
+  font-size: 11px;
+}
+.course-node.layer-2 strong {
+  font-size: 10px;
+}
+.map-label h1 {
+  font-size: 24px;
+}
+.map-label p {
+  color: #7f8da2;
+  font-size: 12px;
+}
+.map-controls button {
+  color: #a4b1c3;
+  font-size: 12px;
+}
+.map-controls b {
+  color: #8797ad;
+  font-size: 11px;
+}
+.legend {
+  color: #96a5b9;
+  font-size: 11px;
+}
+.legend-arrow-key {
+  font-size: 10px;
+  line-height: 1.35;
+}
+.detail-topline {
+  color: #8e9eb5;
+  font-size: 12px;
+}
+.detail-card h2 {
+  font-size: 26px;
+}
+.detail-card h3 {
+  color: #b8c3d3;
+  font-size: 16px;
+  line-height: 1.4;
+}
+.detail-card > p {
+  color: #96a6bb;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.prereq-row span {
+  color: #7f90a8;
+  font-size: 11px;
+}
+.prereq-row strong {
+  color: #acbacd;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.calendar-source {
+  font-size: 11px;
+}
+.eligibility strong {
+  font-size: 12px;
+}
+.eligibility small {
+  color: #8b9bb2;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.plan-button {
+  font-size: 13px;
+}
+.sidebar-header h2 {
+  font-size: 20px;
+}
+.section-title h3 {
+  font-size: 17px;
+}
+.section-title > span {
+  color: #91a1b8;
+  font-size: 11px;
+}
+.list-item {
+  height: 58px;
+  flex-basis: 58px;
+}
+.course-link strong {
+  color: #d0d8e4;
+  font-size: 16px;
+}
+.course-link small {
+  max-width: 210px;
+  color: #8393aa;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.empty-state {
+  color: #8393aa;
+  font-size: 12px;
+  line-height: 1.55;
 }
