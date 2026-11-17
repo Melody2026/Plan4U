@@ -1145,6 +1145,60 @@ function App() {
   const stageRef = useRef<HTMLDivElement>(null);
   const [positions, setPositions] = useState(COURSE_POSITIONS);
   const [mapArea, setMapArea] = useState<MapArea | null>(null);
+  const [popupPlacement, setPopupPlacement] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    const card = courseDetailsRef.current;
+    const workspace = stage?.parentElement;
+    if (!selected || !stage || !card || !workspace) return;
+    const place = () => {
+      const bounds = workspace.getBoundingClientRect();
+      const header = document.querySelector(".topbar")?.getBoundingClientRect();
+      const margin = 18;
+      const width = Math.min(286, Math.max(0, bounds.width - margin * 2));
+      const topLimit = Math.max(margin, (header?.bottom ?? bounds.top) - bounds.top + margin);
+      const bottomLimit = bounds.height - margin;
+      const obstacles = [...workspace.querySelectorAll(".progress-card, .map-toolbar, .legend")].map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left - bounds.left - margin, right: rect.right - bounds.left + margin, top: rect.top - bounds.top - margin, bottom: rect.bottom - bounds.top + margin };
+      });
+      const node = [...stage.querySelectorAll<HTMLElement>(".course-node")].find((element) => element.dataset.code === selected)?.getBoundingClientRect();
+      const nodeX = node ? (node.left + node.right) / 2 - bounds.left : bounds.width / 2;
+      const nodeY = node ? (node.top + node.bottom) / 2 - bounds.top : bounds.height / 2;
+      const radius = node ? node.width / 2 : 0;
+      const clampX = (x: number) => Math.max(margin, Math.min(bounds.width - margin - width, x));
+      const xCandidates = [bounds.width - margin - width, nodeX + radius + margin, nodeX - radius - margin - width, margin, ...obstacles.flatMap((item) => [item.left - width, item.right])].map(clampX);
+      const desiredHeight = card.scrollHeight;
+      const candidates = xCandidates.flatMap((left, index) => {
+        const blocking = obstacles.filter((item) => left < item.right && left + width > item.left).sort((a, b) => a.top - b.top);
+        const intervals: { top: number; bottom: number }[] = [];
+        let start = topLimit;
+        for (const item of blocking) {
+          if (item.top > start) intervals.push({ top: start, bottom: Math.min(item.top, bottomLimit) });
+          start = Math.max(start, item.bottom);
+        }
+        if (start < bottomLimit) intervals.push({ top: start, bottom: bottomLimit });
+        return intervals.filter((interval) => interval.bottom > interval.top).map((interval) => {
+          const maxHeight = interval.bottom - interval.top;
+          const height = Math.min(desiredHeight, maxHeight);
+          const preferredTop = index === 0 ? topLimit : nodeY - height / 2;
+          const top = Math.max(interval.top, Math.min(interval.bottom - height, preferredTop));
+          const distance = Math.hypot(left + width / 2 - nodeX, top + height / 2 - nodeY);
+          return { left, top, width, maxHeight, full: maxHeight >= desiredHeight, distance, index };
+        });
+      });
+      candidates.sort((a, b) => Number(b.full) - Number(a.full) || (a.full && b.full && (a.index === 0 || b.index === 0) ? a.index - b.index : 0) || (b.full ? a.distance - b.distance : b.maxHeight - a.maxHeight));
+      const best = candidates[0];
+      if (best) setPopupPlacement({ left: best.left, top: best.top, width: best.width, maxHeight: best.maxHeight });
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(workspace);
+    workspace.querySelectorAll(".progress-card, .map-toolbar, .legend").forEach((element) => observer.observe(element));
+    window.addEventListener("resize", place);
+    stage.addEventListener("transitionend", place);
+    return () => { observer.disconnect(); window.removeEventListener("resize", place); stage.removeEventListener("transitionend", place); };
+  }, [selected, pan, zoom, positions, mapArea, view, planned, completed]);
   useLayoutEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -1582,6 +1636,7 @@ function App() {
               return (
                 <button
                   key={code}
+                  data-code={code}
                   className={`course-node layer-${layer(code)} ${nodeStatus}`}
                   style={{
                     transition:
@@ -1697,11 +1752,14 @@ function App() {
             aria-label="Course information"
             style={{
               position: "absolute",
-              right: 18,
-              top: 96,
-              width: 286,
+              left: popupPlacement?.left ?? 18,
+              right: "auto",
+              top: popupPlacement?.top ?? 96,
+              width: popupPlacement?.width ?? 286,
               padding: 16,
-              maxHeight: "calc(100% - 120px)",
+              maxHeight: popupPlacement?.maxHeight ?? 0,
+              visibility: popupPlacement ? "visible" : "hidden",
+              transform: "none",
               zIndex: 20,
             }}
           >
