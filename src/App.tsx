@@ -1,4 +1,4 @@
-﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { COURSE_LIST, COURSES, type Course } from "./data/courses";
 import { inferCompletedPrerequisites } from "./completedPrerequisites";
@@ -401,7 +401,7 @@ function AppHeader({
         </div>
         <div>
           <div className="brand-name">CoursePath</div>
-          <div className="brand-subtitle">UBC Ã‚Â· BSc Computer Science</div>
+          <div className="brand-subtitle">UBC {"\u00B7"} BSc Computer Science</div>
         </div>
         </button>
         <nav className="view-tabs" aria-label="Workspace views">
@@ -884,7 +884,7 @@ function SearchCompare({
           <Icon name="search" />
           <input
             aria-label="Search all courses"
-            placeholder="Search codes, topics or interests Ã¢â‚¬â€ machine learning, security, graphicsÃ¢â‚¬Â¦"
+            placeholder={"Search codes, topics or interests \u2014 machine learning, security, graphics\u2026"}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -1064,7 +1064,7 @@ function SearchCompare({
                       <div className="sc-comparison-section">
                         <dt>Main topics</dt>
                         <dd>
-                          {topicsFor(course).join(" Ã‚Â· ") ||
+                          {topicsFor(course).join(" \u00B7 ") ||
                             "No topic tags identified in catalog text"}
                         </dd>
                       </div>
@@ -1098,7 +1098,7 @@ function SearchCompare({
                       <div className="sc-comparison-section">
                         <dt>Degree requirements</dt>
                         <dd>
-                          {requirementLabels(course).join(" Ã‚Â· ")}
+                          {requirementLabels(course).join(" \u00B7 ")}
                           <p className="sc-footnote">
                             Credit categories used by your progress report; subject to program
                             rules.
@@ -1113,7 +1113,7 @@ function SearchCompare({
                       </div>
                     </dl>
                     <a href={course.sourceUrl} target="_blank" rel="noreferrer">
-                      Academic Calendar source Ã¢â€ â€”
+                      Academic Calendar source {"\u2197"}
                     </a>
                     {planButton(code)}
                   </article>
@@ -1700,8 +1700,12 @@ function App() {
 
         <div className="map-label">
           <span className="eyebrow">Solar map</span>
-          <h1>{center} Ã‚Â· {COURSES[center].title}</h1>
-          <p>Drag to pan Ã‚Â· Scroll to zoom Ã‚Â· Select a star to explore</p>
+          <h1>
+            {center} {"\u00B7"} {COURSES[center].title}
+          </h1>
+          <p>
+            Drag to pan {"\u00B7"} Scroll to zoom {"\u00B7"} Select a star to explore
+          </p>
         </div>
 
         <div className="map-toolbar">

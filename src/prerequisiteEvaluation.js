@@ -1,4 +1,4 @@
-﻿const highSchoolPattern = /(?:principles of mathematics|pre[- ]calculus|high school(?: calculus| biology)?|AP Calculus(?: AB| BC)?|(?:CALC|ENGL|CHEM|PHYS|BIOL|MATH)\s+(?:11|12)\b)/i;
+const highSchoolPattern = /(?:principles of mathematics|pre[- ]calculus|high school(?: calculus| biology)?|AP Calculus(?: AB| BC)?|(?:CALC|ENGL|CHEM|PHYS|BIOL|MATH)\s+(?:11|12)\b)/i;
 export function evaluatePrerequisites(course, taken) {
   const hasHighSchool = highSchoolPattern.test(course.prerequisiteText);
   const text = course.prerequisiteText.replace(/This course is not eligible[\s\S]*/i, '').replace(/(?:Principles of Mathematics|Pre[- ]calculus|CALC|ENGL|CHEM|PHYS|BIOL|MATH)\s+(?:11|12)\b|AP Calculus(?: AB| BC)?|High School Biology/gi, ' HIGHSCHOOL ').replace(/High school calculus is strongly recommended\.?/gi, '').replace(/\b([A-Z]{2,5})_V\s+(\d{3})/g, '$1 $2');
