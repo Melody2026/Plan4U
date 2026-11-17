@@ -43,7 +43,9 @@ function HistoricalStatistics({ course }: { course: Course }) {
       </div>
       <div className="course-fact course-fact-professor">
         <span>PROFESSOR</span>
-        <strong>{professorNames.length ? professorNames.join(", ") : "Not available"}</strong>
+        <strong title={professorNames.join(", ")}>
+          {professorNames.length ? professorNames.join(", ") : "Not available"}
+        </strong>
       </div>
     </section>
   );
@@ -140,30 +142,32 @@ function AppHeader({
 }) {
   return (
     <header className="topbar">
-      <div className="brand-mark">
-        <span className="brand-orbit" />
-        <span className="brand-core" />
+      <div className="topbar-content">
+        <div className="brand-mark">
+          <span className="brand-orbit" />
+          <span className="brand-core" />
+        </div>
+        <div>
+          <div className="brand-name">CoursePath</div>
+          <div className="brand-subtitle">UBC · BSc Computer Science</div>
+        </div>
+        <nav className="view-tabs" aria-label="Workspace views">
+          <button
+            aria-current={view === "constellation" ? "page" : undefined}
+            onClick={() => onViewChange("constellation")}
+          >
+            <Icon name="constellation" size={15} />
+            Constellation
+          </button>
+          <button
+            aria-current={view === "search" ? "page" : undefined}
+            onClick={() => onViewChange("search")}
+          >
+            <Icon name="compare" size={15} />
+            Search &amp; Compare
+          </button>
+        </nav>
       </div>
-      <div>
-        <div className="brand-name">CoursePath</div>
-        <div className="brand-subtitle">UBC · BSc Computer Science</div>
-      </div>
-      <nav className="view-tabs" aria-label="Workspace views">
-        <button
-          aria-current={view === "constellation" ? "page" : undefined}
-          onClick={() => onViewChange("constellation")}
-        >
-          <Icon name="constellation" size={15} />
-          Constellation
-        </button>
-        <button
-          aria-current={view === "search" ? "page" : undefined}
-          onClick={() => onViewChange("search")}
-        >
-          <Icon name="compare" size={15} />
-          Search &amp; Compare
-        </button>
-      </nav>
     </header>
   );
 }
@@ -534,6 +538,7 @@ function SearchCompare({
   const [sort, setSort] = useState("relevance");
   const [choices, setChoices] = useState<[string, string]>(["", ""]);
   const [comparison, setComparison] = useState<[string, string] | null>(null);
+  const [expandedDescriptions, setExpandedDescriptions] = useState<Set<string>>(new Set());
   const dialog = useRef<HTMLDialogElement>(null);
   const terms = interestTerms(search);
   const matchesFilter = (course: Course, filter: string) => {
@@ -606,11 +611,7 @@ function SearchCompare({
   return (
     <div className="search-compare">
       <section className="sc-panel sc-search" aria-label="Search courses">
-        <div>
-          <span className="eyebrow">Course catalog</span>
-          <h1>Search Courses</h1>
-          <p>Find courses by keyword, interest, or degree requirement.</p>
-        </div>
+        <h1>Search Courses</h1>
         <label className="sc-search-input">
           <Icon name="search" />
           <input
@@ -660,7 +661,27 @@ function SearchCompare({
                 </h2>
                 {planButton(course.code)}
               </div>
-              <p className="sc-description">{course.description}</p>
+              <p
+                id={`description-${course.code.replace(/\s/g, "-")}`}
+                className={`sc-description ${expandedDescriptions.has(course.code) ? "expanded" : ""}`}
+              >
+                {course.description}
+              </p>
+              <button
+                className="sc-description-toggle"
+                aria-expanded={expandedDescriptions.has(course.code)}
+                aria-controls={`description-${course.code.replace(/\s/g, "-")}`}
+                onClick={() =>
+                  setExpandedDescriptions((previous) => {
+                    const next = new Set(previous);
+                    if (next.has(course.code)) next.delete(course.code);
+                    else next.add(course.code);
+                    return next;
+                  })
+                }
+              >
+                {expandedDescriptions.has(course.code) ? "Show less" : "Full description"}
+              </button>
               <HistoricalStatistics course={course} />
               <div className="sc-tags">
                 <span>{course.creditsLabel} credits</span>
@@ -690,9 +711,7 @@ function SearchCompare({
           <PlannedCourseList planned={planned} onRemove={removePlan} />
         </section>
         <section className="sc-panel sc-compare">
-          <span className="eyebrow">Explore your options</span>
           <h2>Compare Courses</h2>
-          <p>See course details side by side.</p>
           {choices.map((value, index) => (
             <label className="sc-choice" key={index}>
               Course {index + 1}
@@ -1124,15 +1143,14 @@ function App() {
 
   return (
     <main className={`app-shell ${view === "search" ? "search-view" : ""}`}>
+      <AppHeader
+        view={view}
+        onViewChange={(nextView) => {
+          if (nextView === "search") setSelected(null);
+          setView(nextView);
+        }}
+      />
       <section className="map-workspace" aria-label="Course prerequisite map">
-        <AppHeader
-          view={view}
-          onViewChange={(nextView) => {
-            if (nextView === "search") setSelected(null);
-            setView(nextView);
-          }}
-        />
-
         <div className="progress-card glass-panel">
           <div className="panel-heading">
             <div>
