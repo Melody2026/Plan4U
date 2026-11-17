@@ -549,6 +549,33 @@ const missingPrerequisitePaths = (course: Course, taken: ReadonlySet<string>) =>
   return paths.map((path) => path.filter((code) => !taken.has(code) && !highSchoolPattern.test(code)));
 };
 
+type MissingGroup = { label: string; codes: string[] };
+const simplifyMissingPaths = (paths: string[][], hadCompleted: boolean): MissingGroup[] => {
+  if (!paths.length) return [];
+  const unique = [...new Map(paths.map((path) => {
+    const codes = [...new Set(path)].sort();
+    return [codes.join("|"), codes] as const;
+  })).values()];
+  // A longer path is redundant if a shorter alternative is already sufficient.
+  const minimal = unique.filter((path, index) => !unique.some((other, otherIndex) =>
+    index !== otherIndex && other.length < path.length && other.every((code) => path.includes(code)),
+  ));
+  const common = minimal[0].filter((code) => minimal.every((path) => path.includes(code)));
+  const groups: MissingGroup[] = common.length ? [{ label: "Required", codes: common }] : [];
+  const remaining = minimal.map((path) => path.filter((code) => !common.includes(code)));
+  if (remaining.some((path) => path.length === 0)) return groups;
+  const options = [...new Set(remaining.flat())].sort();
+  const count = remaining[0].length;
+  let combinations = 1;
+  for (let i = 1; i <= count; i++) combinations = combinations * (options.length - i + 1) / i;
+  if (remaining.every((path) => path.length === count) && remaining.length === Math.round(combinations)) {
+    groups.push({ label: `Complete ${count}${hadCompleted ? " more" : ""} of the following`, codes: options });
+  } else {
+    remaining.forEach((path, index) => groups.push({ label: `${index ? "OR · " : ""}Option ${index + 1} — complete all`, codes: path }));
+  }
+  return groups;
+};
+
 const WORLD = { width: 4800, height: 3600 };
 const DEFAULT_ZOOM = 0.9;
 const INITIAL_COMPLETED = ["CPSC 110", "MATH 100", "ENGL 110"];
@@ -713,7 +740,7 @@ const fitNeighborhood = (
         const angle = (step / 48) * Math.PI * 2;
         const irregularity = Math.sin(step * 7 + radius) * 6;
         const point = { x: anchor.x + Math.cos(angle) * (radius + irregularity), y: anchor.y + Math.sin(angle) * (radius + irregularity) };
-        if (fits(point, 57)) candidates.push(point);
+        if (fits(point, 72)) candidates.push(point);
       }
     }
     for (const [index, neighbor] of direct.entries()) {
@@ -732,7 +759,7 @@ const fitNeighborhood = (
         .sort((a, b) => score(a) - score(b));
       if (available[0]) placed[neighbor] = available[0];
     }
-    if (fits(anchor, 72) && direct.every((neighbor) => placed[neighbor])) break;
+    if (fits(anchor, 87) && direct.every((neighbor) => placed[neighbor])) break;
     if (attempt % 2 === 1) fitZoom *= 0.95;
   }
   return {
@@ -1216,12 +1243,17 @@ function App() {
     const stage = stageRef.current;
     if (!stage) return;
     const measure = () => {
-      const bounds = stage.getBoundingClientRect();
       const workspace = stage.parentElement!;
+      const workspaceBounds = workspace.getBoundingClientRect();
+      const legend = workspace.querySelector<HTMLElement>(".legend");
+      if (legend) {
+        const legendBounds = legend.getBoundingClientRect();
+        stage.style.bottom = `${Math.max(0, workspaceBounds.bottom - legendBounds.top + 8)}px`;
+      }
+      const bounds = stage.getBoundingClientRect();
       const toolbar = workspace.querySelector<HTMLElement>(".map-toolbar");
       const sidebarHeading = document.querySelector<HTMLElement>(".sidebar-header h2");
       if (toolbar && sidebarHeading) {
-        const workspaceBounds = workspace.getBoundingClientRect();
         const headingBounds = sidebarHeading.getBoundingClientRect();
         const toolbarBounds = toolbar.getBoundingClientRect();
         toolbar.style.top = `${(headingBounds.top + headingBounds.bottom) / 2 - workspaceBounds.top - toolbarBounds.height / 2}px`;
@@ -1231,14 +1263,13 @@ function App() {
         bottom = bounds.height - 16;
       const obstacles: MapArea["obstacles"] = [];
       stage
-        .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar, .map-footer-controls")
+        .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar")
         .forEach((element) => {
           const rect = element.getBoundingClientRect();
           if (element.classList.contains("progress-card") || element.classList.contains("map-toolbar"))
             obstacles.push({ left: rect.left - bounds.left, right: rect.right - bounds.left, top: rect.top - bounds.top, bottom: rect.bottom - bounds.top });
           else if (element.classList.contains("map-label"))
             top = Math.max(top, rect.bottom - bounds.top + 18);
-          else bottom = Math.min(bottom, rect.top - bounds.top - 18);
         });
       const next = {
         left,
@@ -1256,7 +1287,7 @@ function App() {
     const sidebarHeading = document.querySelector(".sidebar-header h2");
     if (sidebarHeading) observer.observe(sidebarHeading);
     stage
-      .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar, .map-footer-controls")
+      .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar, .legend")
       .forEach((panel) => observer.observe(panel));
     measure();
     return () => observer.disconnect();
@@ -1425,6 +1456,10 @@ function App() {
 
   const currentDetails = selected ? COURSES[selected] : null;
   const missingPaths = currentDetails ? missingPrerequisitePaths(currentDetails, new Set(completed)) : [];
+  const originalPaths = currentDetails?.prerequisitePaths ?? [];
+  const sharedOriginal = originalPaths[0]?.filter((code) => originalPaths.every((path) => path.includes(code))) ?? [];
+  const completedAlternative = originalPaths.some((path) => path.some((code) => completed.includes(code) && !sharedOriginal.includes(code)));
+  const missingGroups = simplifyMissingPaths(missingPaths, completedAlternative);
   const eligibility = useMemo(() => {
     const taken = new Set(completed);
     return Object.fromEntries(
@@ -1800,27 +1835,22 @@ function App() {
             <h3>{currentDetails.title}</h3>
             <p>{currentDetails.description}</p>
             <HistoricalStatistics course={currentDetails} />
-            <div className="prereq-row">
-              <span>Prerequisites</span>
-              <strong>{currentDetails.prerequisiteText || "None"}</strong>
-              {currentDetails.corequisiteText && (
-                <>
-                  <span className="corequisite-label">Corequisites</span>
-                  <strong>{currentDetails.corequisiteText}</strong>
-                </>
-              )}
-            </div>
+            {currentDetails.corequisiteText && (
+              <div className="prereq-row">
+                <span>Corequisites</span>
+                <strong>{currentDetails.corequisiteText}</strong>
+              </div>
+            )}
             {missingPaths.length > 0 && (
               <section className="missing-prerequisites" aria-label="Missing prerequisites">
                 <h4>Missing prerequisites</h4>
-                <p>{missingPaths.length > 1 ? "Complete all courses in one option:" : "Complete all of the following:"}</p>
-                {missingPaths.map((path, index) => (
-                  <div className="missing-path" key={`${index}-${path.join("-")}`}>
-                    {missingPaths.length > 1 && <span className="missing-path-label">{index > 0 ? "OR · " : ""}Option {index + 1}</span>}
-                    {path.map((code) => (
+                {missingGroups.map((group, index) => (
+                  <div className="missing-path" key={`${index}-${group.codes.join("-")}`}>
+                    <span className="missing-path-label">{group.label}</span>
+                    {group.codes.map((code) => (
                       <div className="missing-course" key={code}>
                         {COURSES[code] ? (
-                          <button onClick={() => focusCourse(code)}>
+                          <button onClick={() => focusCourse(code, false)}>
                             <strong><CourseCode code={code} /></strong>
                             <span>{COURSES[code].title}</span>
                           </button>
@@ -1837,7 +1867,7 @@ function App() {
             {missingPaths.length === 0 && detailEligibility && !detailEligibility.met && currentDetails.prerequisiteText && currentDetails.prerequisitePaths.length === 0 && (
               <section className="missing-prerequisites" aria-label="Missing prerequisites">
                 <h4>Missing prerequisites</h4>
-                <p>Review the prerequisite text above for requirements that could not be separated into course options.</p>
+                <p>Review the Academic Calendar source for requirements that could not be separated into course options.</p>
               </section>
             )}
             {detailEligibility?.hasHighSchool && (
@@ -1871,7 +1901,7 @@ function App() {
                             ? "Prerequisites met; corequisites completed or planned."
                             : "Prerequisites met. Listed corequisites still need to be completed or planned."
                           : "A valid prerequisite pathway is complete"
-                        : "Complete one of the listed prerequisite pathways"}
+                        : missingPaths.length ? "Complete the missing prerequisite requirements" : "Review the Academic Calendar requirements"}
                 </small>
               </span>
             </div>

@@ -969,7 +969,7 @@
 .graph-stage {
   position: absolute;
   z-index: 2;
-  inset: 76px 0 170px;
+  inset: 76px 0 65px;
   overflow: hidden;
   touch-action: none;
   cursor: grab;
