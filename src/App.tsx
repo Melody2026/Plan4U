@@ -1160,7 +1160,7 @@ function App() {
         bottom = bounds.height - 16;
       const obstacles: MapArea["obstacles"] = [];
       stage
-        .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar, .legend")
+        .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar, .map-footer-controls")
         .forEach((element) => {
           const rect = element.getBoundingClientRect();
           if (element.classList.contains("progress-card") || element.classList.contains("map-toolbar"))
@@ -1185,7 +1185,7 @@ function App() {
     const sidebarHeading = document.querySelector(".sidebar-header h2");
     if (sidebarHeading) observer.observe(sidebarHeading);
     stage
-      .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar, .legend")
+      .parentElement!.querySelectorAll(".progress-card, .map-label, .map-toolbar, .map-footer-controls")
       .forEach((panel) => observer.observe(panel));
     measure();
     return () => observer.disconnect();
@@ -1668,23 +1668,18 @@ function App() {
             <span>
               <RequiredStar /> Required for graduation
             </span>
-            <div className="legend-lower">
-              <div className="legend-arrow-key">
-                <span>
+                <span className="legend-arrow-key">
                   <span style={{ color: "#62e4f4", fontSize: 14 }} aria-hidden="true">
                     &#8594;
                   </span>{" "}
-                  Cyan arrow: Prerequisite.
+                  Prerequisite
                 </span>
-                <span>
+                <span className="legend-arrow-key">
                   <span style={{ color: "#ffa65c", fontSize: 14 }} aria-hidden="true">
                     &#8594;
                   </span>{" "}
-                  Orange arrow: Dependent course.
+                  Dependent course
                 </span>
-              </div>
-
-            </div>
           </div>
         </div>
 
